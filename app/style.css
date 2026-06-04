@@ -1,0 +1,606 @@
+/* --- TEMA RENKLERI VE DEGISKENLER --- */
+:root {
+  --bg-color: #f3f5f8; 
+  --text-main: #334155; 
+  --text-muted: #64748b;
+  --primary: #059669;
+  --primary-hover: #047857;
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 10px 40px 0 rgba(15, 23, 42, 0.05);
+  --widget-bg: rgba(255, 255, 255, 0.9);
+  --icon-bg: #1e293b; 
+  --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+[data-theme="dark"] {
+  --bg-color: #1e242c; 
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --primary: #10b981;
+  --primary-hover: #34d399;
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 15px 40px 0 rgba(0, 0, 0, 0.4);
+  --widget-bg: rgba(255, 255, 255, 0.06);
+  --icon-bg: #ffffff; 
+}
+
+/* --- GENEL AYARLAR --- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  transition: background-color 0.6s ease, color 0.6s ease;
+  overflow-x: hidden;
+}
+
+.main-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+  width: 100%;
+}
+
+/* --- SMOOTH ANIMASYONLAR --- */
+.fade-content {
+  animation: fadeInSmooth 0.4s ease-in-out forwards;
+}
+
+@keyframes fadeInSmooth {
+  0% { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* --- PREMIUM KONTROL PANELI --- */
+.top-controls {
+  position: absolute;
+  top: 25px;
+  right: 25px;
+  display: flex;
+  align-items: center;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 40px;
+  padding: 5px 5px 5px 15px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  z-index: 50;
+  transition: all 0.3s ease;
+}
+
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-header {
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  user-select: none;
+}
+
+.dropdown-header svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--primary);
+  transition: transform 0.3s ease;
+}
+
+.custom-dropdown.open .dropdown-header svg {
+  transform: rotate(180deg);
+}
+
+.dropdown-list {
+  position: absolute;
+  top: calc(100% + 15px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 130px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 15px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  overflow: hidden;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-item {
+  padding: 12px 15px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.dropdown-item:hover {
+  background: var(--primary);
+  color: white;
+}
+
+.dropdown-item.active {
+  color: var(--primary);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.dropdown-item.active:hover {
+  color: white;
+  background: var(--primary);
+}
+
+.control-divider {
+  width: 1px;
+  height: 20px;
+  background-color: var(--glass-border);
+  margin: 0 10px;
+}
+
+.control-btn {
+  background: var(--widget-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--text-main);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  outline: none;
+  transition: all 0.3s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.control-btn:hover {
+  transform: scale(1.1);
+  background: var(--primary);
+}
+
+/* --- BASLIK --- */
+.header-section {
+  text-align: center;
+  margin-bottom: 40px;
+  margin-top: 50px;
+}
+
+.brand-title {
+  font-size: 3.5rem;
+  font-weight: 900;
+  color: var(--primary);
+  letter-spacing: 5px;
+  margin-bottom: 5px;
+  text-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);
+  text-transform: uppercase;
+}
+
+.brand-subtitle {
+  font-size: 0.8rem;
+  letter-spacing: 4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* --- GLASSMORPHISM KART (ANA PANEL) --- */
+.glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 30px;
+  padding: 40px;
+  width: 100%;
+  max-width: 850px;
+  transition: all 0.6s ease;
+}
+
+/* --- YENI ARAMA KUTUSU (SABIT DS YAZISI) --- */
+.search-container {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 50px;
+}
+
+.search-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 25px;
+  border-radius: 15px;
+  border: 1px solid var(--glass-border);
+  background: var(--widget-bg);
+  transition: all 0.3s;
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+}
+
+.search-prefix {
+  font-size: 1.2rem;
+  font-weight: 900;
+  color: var(--text-main);
+  opacity: 0.4;
+  margin-right: 5px;
+  letter-spacing: 2px;
+  user-select: none;
+}
+
+.search-inner-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 1.2rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  outline: none;
+  padding: 18px 0;
+}
+
+.search-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 15px;
+  padding: 0 35px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.search-btn:hover {
+  background: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+/* --- DINAMIK 3'LU TIMELINE --- */
+.timeline-window {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 60px;
+  position: relative;
+  min-height: 140px;
+}
+
+.timeline-line-bg {
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  width: 80%;
+  height: 4px;
+  background: var(--glass-border);
+  z-index: 1;
+  transform: translateY(-15px);
+  border-radius: 10px;
+}
+
+.step-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  z-index: 2;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 140px;
+}
+
+.icon-circle {
+  width: 75px;
+  height: 75px;
+  border-radius: 50%;
+  background: var(--icon-bg); 
+  border: 4px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 15px;
+  position: relative;
+  transition: all 0.5s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.step-box.prev {
+  transform: scale(0.85); 
+  opacity: 0.6; 
+}
+.step-box.prev .icon-circle {
+  border-color: var(--primary);
+}
+.checkmark {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: bold;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  z-index: 10;
+}
+
+.step-box.curr {
+  transform: scale(1.15); 
+  z-index: 5;
+}
+.step-box.curr .icon-circle {
+  border-color: var(--primary);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.35);
+}
+
+.step-box.next {
+  transform: scale(0.85);
+  filter: grayscale(100%);
+  opacity: 0.4;
+}
+
+.step-box.empty {
+  visibility: hidden;
+}
+
+.step-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+}
+.step-box.curr .step-label {
+  color: var(--primary);
+}
+
+/* --- MUSTERI WIDGET'LARI --- */
+.info-grid { 
+  display: grid; 
+  grid-template-columns: 2fr 1fr; 
+  gap: 20px; 
+}
+
+.widget { 
+  background: var(--widget-bg); 
+  border: 1px solid var(--glass-border); 
+  border-radius: 20px; 
+  padding: 25px; 
+  box-shadow: 0 4px 20px rgba(0,0,0,0.02);
+  transition: all 0.4s;
+}
+
+.widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.05);
+}
+
+.info-row { 
+  display: flex; 
+  justify-content: space-between; 
+  margin-bottom: 15px; 
+}
+.info-label { 
+  font-size: 0.75rem; 
+  color: var(--text-muted); 
+  text-transform: uppercase; 
+  letter-spacing: 1px; 
+  margin-bottom: 5px; 
+  font-weight: 700;
+}
+.info-value { 
+  font-size: 1.25rem; 
+  font-weight: 800; 
+  color: var(--text-main);
+}
+
+/* --- FIYAT WIDGET'I --- */
+.price-widget { 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center; 
+  background: linear-gradient(145deg, var(--widget-bg), var(--glass-bg));
+  padding: 25px;
+}
+.price-usd { 
+  font-size: 2.2rem; 
+  font-weight: 900; 
+  color: var(--primary); 
+  margin-bottom: 5px; 
+  text-shadow: 0 2px 10px rgba(16, 185, 129, 0.1);
+  text-align: center;
+}
+.price-calc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.price-delivery {
+  color: var(--primary);
+}
+.price-divider {
+  border: 0;
+  height: 1px;
+  background: var(--glass-border);
+  margin: 12px 0;
+}
+.price-total {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: var(--text-main);
+  align-items: center;
+}
+
+/* PDF RECEPT YAZDIRMA BUTONU STILI */
+.print-receipt-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 2px dashed var(--glass-border);
+  padding: 12px 25px;
+  border-radius: 15px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 30px auto 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.print-receipt-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+/* ==================================================
+   MOBILE RESPONSIVE
+================================================== */
+@media (max-width: 650px) {
+  .top-controls {
+    top: 15px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 4px 4px 15px;
+  }
+  
+  .header-section { margin-top: 65px; margin-bottom: 25px; }
+  .brand-title { font-size: 2.3rem; letter-spacing: 3px; }
+  .brand-subtitle { font-size: 0.7rem; }
+  
+  .glass-card { padding: 25px 20px; border-radius: 25px; }
+  
+  .search-container { flex-direction: column; gap: 12px; margin-bottom: 35px; }
+  .search-input-wrapper { padding: 0 20px; }
+  .search-inner-input { padding: 16px 0; font-size: 1rem; }
+  .search-btn { padding: 18px; font-size: 1.1rem; border-radius: 15px; width: 100%; }
+
+  .timeline-window { gap: 5px; min-height: 110px; margin-bottom: 35px; }
+  .timeline-line-bg { top: 35px; height: 3px; left: 15%; width: 70%; }
+  
+  .step-box { width: 95px; }
+  .icon-circle { width: 55px; height: 55px; border-width: 3px; margin-bottom: 10px; }
+  
+  .step-box.prev { transform: scale(0.9); }
+  .step-box.curr { transform: scale(1.1); }
+  .step-box.next { transform: scale(0.9); }
+  
+  .checkmark { width: 20px; height: 20px; font-size: 12px; top: -4px; right: -4px; }
+  .step-label { font-size: 0.65rem; letter-spacing: 0; }
+
+  .info-grid { grid-template-columns: 1fr; gap: 15px; }
+  .widget { padding: 20px; border-radius: 20px; }
+  .info-value { font-size: 1.1rem; }
+  .info-label { font-size: 0.7 itsm; }
+  
+  .price-usd { font-size: 2rem; }
+  .price-calc-row { font-size: 0.85rem; }
+  .price-total { font-size: 1.1rem; }
+}
+
+/* ==================================================
+   🖨️ ULTRA-PREMIUM PDF / PRINT PROTOKOLÜ (MÜKEMMEL ÇIKTI)
+================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  /* Ekrandaki gereksiz tüm UI elemanlarını tamamen gizle */
+  .top-controls, 
+  .search-container, 
+  .print-receipt-btn {
+    display: none !important;
+  }
+  .main-wrapper {
+    padding: 0 !important;
+    justify-content: start !important;
+  }
+  .header-section {
+    margin-top: 10px !important;
+    margin-bottom: 20px !important;
+  }
+  .brand-title {
+    color: #059669 !important;
+    font-size: 2.5rem !important;
+  }
+  /* Cam kartı resmi faturaya dönüştür */
+  .glass-card {
+    background: #ffffff !important;
+    border: 2px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+    max-width: 100% !important;
+  }
+  .widget {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+  .price-widget {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  .price-usd {
+    color: #059669 !important;
+  }
+  /* Lottie animasyonları yazıcıda görünmez, o yüzden daireleri resmi mühür gibi göster */
+  .icon-circle {
+    background: #f8fafc !important;
+    border: 3px solid #cbd5e1 !important;
+  }
+  .step-box.curr .icon-circle {
+    border-color: #059669 !important;
+    background: #f0fdf4 !important;
+  }
+  .step-box.next {
+    opacity: 0.3 !important;
+  }
+}
