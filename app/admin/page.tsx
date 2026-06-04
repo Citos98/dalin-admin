@@ -365,18 +365,18 @@ export default function AdminPanel() {
           
           <div className="form-grid">
             <div className="form-col" style={{ flex: "1 1 30%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Order Code (DS215 or 215):</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>کۆدی داواکاری(DS215 or 215):</label>
               <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", fontWeight: "bold" }} />
             </div>
             <div className="form-col" style={{ flex: "1 1 15%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Title:</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:نازناو</label>
               <select name="title" value={formData.title} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold" }}>
                 <option value="Mr">Mr.</option>
                 <option value="Miss">Miss.</option>
               </select>
             </div>
             <div className="form-col" style={{ flex: "1 1 20%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Customer Lang:</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:زمانی کڕیار</label>
               <select name="customerLang" value={formData.customerLang} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold" }}>
                 <option value="ku">Kurdish</option>
                 <option value="ar">Arabic</option>
@@ -386,22 +386,22 @@ export default function AdminPanel() {
 
           <div className="form-grid">
             <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Customer Full Name:</label>
-              <input type="text" placeholder="e.g., Saya Latif" name="fullName" value={formData.fullName} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ناوی تەواوی کڕیار</label>
+              <input type="text" placeholder="e.g., Dahat" name="fullName" value={formData.fullName} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
             </div>
             <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Phone Number:</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی مۆبایل</label>
               <input type="text" placeholder="e.g., 0750 123 4567" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Total Items:</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی کاڵاکان</label>
               <input type="number" name="items" value={formData.items} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
             </div>
             <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Order Date:</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:بەرواری داواکاری</label>
               <input type="text" placeholder="03.06.2026" name="date" value={formData.date} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
             </div>
           </div>
@@ -409,7 +409,7 @@ export default function AdminPanel() {
           <div className="form-grid">
             <div className="form-col-3">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Total Amount (USD):</label>
+                <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:بڕی گشتی (دۆلار)</label>
                 <span style={{ fontSize: "11px", color: "#059669", fontWeight: "bold" }}>
                   Rate: 
                   <select value={exchangeRate} onChange={handleRateChange} style={{ width: "55px", background: "transparent", border: "none", borderBottom: "1px solid #059669", color: "#059669", fontWeight: "bold", marginLeft: "2px", outline: "none", textAlign: "center", cursor: "pointer" }}>
@@ -421,11 +421,11 @@ export default function AdminPanel() {
               <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
             </div>
             <div className="form-col-3">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Equivalent (IQD):</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دینار</label>
               <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", background: "#f8fafc" }} />
             </div>
             <div className="form-col-3">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Shipping (IQD):</label>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>کرێی گەیاندن:</label>
               <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", cursor: "pointer", appearance: "menulist" }}>
                 <option value={5000}>5000 IQD</option>
                 <option value={0}>0 IQD (Free)</option>
@@ -434,7 +434,7 @@ export default function AdminPanel() {
           </div>
 
           <div>
-            <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>Order Status (0 to 8):</label>
+            <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دۆخی داواکاری(0 to 8):</label>
             <select name="status" value={formData.status} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #059669", outline: "none", fontWeight: "bold", color: "#059669", cursor: "pointer", appearance: "menulist" }}>
               {enStatusLabels.map((label, idx) => (
                 <option key={idx} value={idx}>{label}</option>
@@ -443,7 +443,7 @@ export default function AdminPanel() {
           </div>
 
           <button type="submit" disabled={loading} style={{ background: "#059669", color: "white", padding: "16px", border: "none", borderRadius: "10px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", marginTop: "15px", transition: "0.3s", boxShadow: "0 4px 15px rgba(5,150,105,0.3)" }}>
-            {loading ? "Processing..." : "Save / Update Order"}
+            {loading ? "چاوەڕێ بکە..." : "SAVE/UPDATE"}
           </button>
         </form>
 
