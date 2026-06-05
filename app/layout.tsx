@@ -8,9 +8,15 @@ const poppins = Poppins({
   variable: "--font-poppins",
 });
 
-export const metadata: Metadata = {
-  title: "Dalin Shopping | Premium Tracking",
-  description: "Track your Dalin Shopping orders easily and securely.",
+export const metadata = {
+  title: "Dalin Shopping - Order Tracking",
+  description: "Track your Shein orders easily with Dalin Shopping.",
+  openGraph: {
+    title: "Dalin Shopping - Order Tracking",
+    description: "Track your Shein orders easily with Dalin Shopping.",
+    images: ["/logo.png"], // Sitenin public klasöründe logo.png adında bir fotoğraf olduğundan emin ol
+    type: "website",
+  },
 };
 
 export default function RootLayout({

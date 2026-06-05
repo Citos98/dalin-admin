@@ -52,10 +52,10 @@ const translations = {
     s3: "Shipped to Dubai",
     s4: "Arrived in Dubai",
     s5: "Waiting in Dubai",
-    s6: "Departed for Iraq",
+    s6: "On the way to Kurdistan", // Guncellendi
     s7: "Received & Packing",
     s8: "Out for Delivery",
-    // Guncellenmis Sureler
+    s9: "Delivered", // Stage 9 Eklendi
     time_s0: "Pending",
     time_s1: "12 - 24 Hours",
     time_s2: "1 - 3 Days",
@@ -65,7 +65,10 @@ const translations = {
     time_s6: "6 - 7 Days",
     time_s7: "1 Day",
     time_s8_ku: "1 - 2 Days",
-    time_s8_ar: "2 - 3 Days"
+    time_s8_ar: "2 - 3 Days",
+    time_s9: "Completed",
+    needHelp: "Need help with this order?",
+    waMessage: "Hello, I have a question regarding my order with code: "
   },
   ar: {
     brand: "دالين للتسوق",
@@ -92,10 +95,10 @@ const translations = {
     s3: "شحن إلى دبي",
     s4: "وصل إلى دبي",
     s5: "في الانتظار بدبي",
-    s6: "غادر إلى العراق",
+    s6: "في الطريق إلى كردستان", // Guncellendi
     s7: "تم الاستلام والتغليف",
     s8: "في الطريق للتسليم",
-    // Guncellenmis Sureler
+    s9: "تم التوصيل", // Stage 9 Eklendi
     time_s0: "قيد الانتظار",
     time_s1: "12 - 24 ساعة",
     time_s2: "1 - 3 أيام",
@@ -105,7 +108,10 @@ const translations = {
     time_s6: "6 - 7 أيام",
     time_s7: "يوم واحد",
     time_s8_ku: "1 - 2 أيام",
-    time_s8_ar: "2 - 3 أيام"
+    time_s8_ar: "2 - 3 أيام",
+    time_s9: "مكتمل",
+    needHelp: "تحتاج مساعدة بخصوص هذا الطلب؟",
+    waMessage: "مرحباً، لدي استفسار حول طلبي برقم: "
   },
   ku: {
     brand: "دالین شۆپینگ",
@@ -132,10 +138,10 @@ const translations = {
     s3: "نێردرا بۆ دوبەی",
     s4: "گەیشتە دوبەی",
     s5: "لە دوبەی چاوەڕێ دەکات",
-    s6: "بەرەو عێراق بەڕێکەوت",
+    s6: "بەرەو کوردستان بەڕێکەوت", // Guncellendi
     s7: "وەرگیرا و پاکەت دەکرێت",
     s8: "لە ڕێگایە بۆ گەیاندن",
-    // Guncellenmis Sureler
+    s9: "گەیەنرا", // Stage 9 Eklendi
     time_s0: "لە چاوەڕوانیدایە",
     time_s1: "12 - 24 کاتژمێر",
     time_s2: "1 - 3 ڕۆژ",
@@ -145,7 +151,10 @@ const translations = {
     time_s6: "6 - 7 ڕۆژ",
     time_s7: "یەک ڕۆژ",
     time_s8_ku: "1 - 2 ڕۆژ",
-    time_s8_ar: "2 - 3 ڕۆژ"
+    time_s8_ar: "2 - 3 ڕۆژ",
+    time_s9: "تەواوکراو",
+    needHelp: "پێویستت بە یارمەتییە بۆ ئەم داواکارییە؟",
+    waMessage: "سڵاو، پرسیارم هەیە دەربارەی داواکارییەکەم بە کۆدی: "
   },
 };
 
@@ -162,7 +171,7 @@ export default function OrderTracking() {
   const [adminName, setAdminName] = useState("Dalin Admin");
 
   const t = translations[lang];
-  const statusLabels = [t.s0, t.s1, t.s2, t.s3, t.s4, t.s5, t.s6, t.s7, t.s8];
+  const statusLabels = [t.s0, t.s1, t.s2, t.s3, t.s4, t.s5, t.s6, t.s7, t.s8, t.s9];
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -252,6 +261,14 @@ export default function OrderTracking() {
     window.print();
   };
 
+  const handleWhatsAppClick = () => {
+    // Sifiri atip +964 ekliyoruz
+    const phoneNumber = "9647517363196"; 
+    // Mevcut dildeki hazir mesaji ve siparis kodunu birlestiriyoruz
+    const message = encodeURIComponent(`${t.waMessage}${orderData.id}`);
+    window.open(`https://wa.me/${phoneNumber}?text=${message}`, '_blank');
+  };
+
   const getDeliveryTime = () => {
     if (!orderData) return "";
     const st = orderData.status;
@@ -267,8 +284,13 @@ export default function OrderTracking() {
     if (st === 7) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s7}</span>;
     
     if (st === 8) {
-      if (custLang === "ku") return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>⏳ {t.time_s8_ku}</span>;
-      return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>⏳ {t.time_s8_ar}</span>;
+      if (custLang === "ku") return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s8_ku}</span>;
+      return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s8_ar}</span>;
+    }
+
+    // STAGE 9 EKLENDİ
+    if (st === 9) {
+      return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>✅ {t.time_s9}</span>;
     }
 
     return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>✅ {t.delivered}</span>;
@@ -276,7 +298,7 @@ export default function OrderTracking() {
 
   const getProgressWidth = () => {
     if (!orderData) return "0%";
-    const percentage = (orderData.status / 8) * 100;
+    const percentage = (orderData.status / 9) * 100; // 8 yerine 9 yazıldı
     return `${percentage}%`;
   };
 
@@ -365,120 +387,195 @@ export default function OrderTracking() {
         </div>
 
         {orderData && (
-          <div key={lang} className="fade-content">
+          <div key={lang} className={`fade-content ${orderData.status === 9 ? 'stage9-active' : ''}`} style={{ position: "relative", overflow: "hidden", minHeight: "400px" }}>
             
-            <div style={{ textAlign: "center", marginBottom: "20px" }}>
-              <div style={{ display: "inline-block", background: "var(--widget-bg)", padding: "10px 25px", borderRadius: "15px", border: "1px solid var(--glass-border)", boxShadow: "0 4px 15px rgba(0,0,0,0.05)" }}>
-                <span style={{ fontSize: "14px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "2px", fontWeight: "bold", marginRight: "10px" }}>Order Code:</span>
-                <span style={{ fontSize: "1.2rem", fontWeight: "900", color: "var(--primary)", letterSpacing: "3px" }} dir="ltr">
-                  {orderData.id}
-                </span>
-              </div>
-            </div>
+            {/* STAGE 9 İÇİN ÖZEL CSS VE ŞEFFAF TİK EFEKTİ */}
+            <style>{`
+              .stage9-active * {
+                color: #059669 !important;
+                border-color: rgba(5, 150, 105, 0.3) !important;
+              }
+              .stage9-bg-tick {
+                position: absolute;
+                top: 45%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: 400px;
+                color: rgba(5, 150, 105, 0.05) !important;
+                z-index: 0;
+                pointer-events: none;
+                line-height: 1;
+              }
+            `}</style>
 
-            <div style={{ maxWidth: "500px", margin: "0 auto 40px auto", textAlign: "center" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "13px" }}>
-                <span style={{ color: "var(--text-muted)", fontWeight: "bold", textTransform: "uppercase" }}>{t.estimatedDelivery}</span>
-                {getDeliveryTime()}
+            {orderData.status === 9 && (
+              <div className="stage9-bg-tick">✓</div>
+            )}
+            
+            <div style={{ position: "relative", zIndex: 1 }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ display: "inline-block", background: "var(--widget-bg)", padding: "10px 25px", borderRadius: "15px", border: "1px solid var(--glass-border)", boxShadow: "0 4px 15px rgba(0,0,0,0.05)" }}>
+                  <span style={{ fontSize: "14px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "2px", fontWeight: "bold", marginRight: "10px" }}>Order Code:</span>
+                  <span style={{ fontSize: "1.2rem", fontWeight: "900", color: "var(--primary)", letterSpacing: "3px" }} dir="ltr">
+                    {orderData.id}
+                  </span>
+                </div>
               </div>
-              <div style={{ height: "8px", background: "var(--glass-border)", borderRadius: "10px", overflow: "hidden" }}>
-                <div style={{ height: "100%", background: "var(--primary)", width: getProgressWidth(), transition: "width 1s ease-in-out", boxShadow: "0 0 10px rgba(16,185,129,0.5)" }}></div>
-              </div>
-            </div>
 
-            <div className="timeline-window">
-              <div className="timeline-line-bg"></div>
-              
-              {orderData.status > 0 ? (
-                <div className="step-box prev">
-                  <div className="icon-circle">
-                    <div className="checkmark">✓</div>
-                    <Lottie animationData={animationsList[orderData.status - 1]} loop={false} style={{ width: 40, height: 40 }} />
+              <div style={{ maxWidth: "500px", margin: "0 auto 40px auto", textAlign: "center" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "13px" }}>
+                  <span style={{ color: "var(--text-muted)", fontWeight: "bold", textTransform: "uppercase" }}>{t.estimatedDelivery}</span>
+                  {getDeliveryTime()}
+                </div>
+                <div style={{ height: "8px", background: "var(--glass-border)", borderRadius: "10px", overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: "var(--primary)", width: getProgressWidth(), transition: "width 1s ease-in-out", boxShadow: "0 0 10px rgba(16,185,129,0.5)" }}></div>
+                </div>
+              </div>
+
+              <div className="timeline-window">
+                <div className="timeline-line-bg"></div>
+                
+                {orderData.status > 0 ? (
+                  <div className="step-box prev">
+                    <div className="icon-circle">
+                      <div className="checkmark">✓</div>
+                      {animationsList[orderData.status - 1] ? (
+                        <Lottie animationData={animationsList[orderData.status - 1]} loop={false} style={{ width: 40, height: 40 }} />
+                      ) : (
+                        <span style={{ fontSize: "24px" }}>✅</span>
+                      )}
+                    </div>
+                    <span className="step-label">{statusLabels[orderData.status - 1]}</span>
                   </div>
-                  <span className="step-label">{statusLabels[orderData.status - 1]}</span>
-                </div>
-              ) : (
-                <div className="step-box empty"></div>
-              )}
+                ) : (
+                  <div className="step-box empty"></div>
+                )}
 
-              <div className="step-box curr">
-                <div className="icon-circle">
-                  <Lottie animationData={animationsList[orderData.status]} loop={true} style={{ width: 60, height: 60 }} />
+                <div className="step-box curr">
+                  <div className="icon-circle">
+                    {orderData.status === 9 ? (
+                      <span style={{ fontSize: "40px" }}>✅</span>
+                    ) : (
+                      <Lottie animationData={animationsList[orderData.status]} loop={true} style={{ width: 60, height: 60 }} />
+                    )}
+                  </div>
+                  <span className="step-label" style={{ fontWeight: orderData.status === 9 ? "bold" : "normal" }}>
+                    {statusLabels[orderData.status]}
+                  </span>
                 </div>
-                <span className="step-label">{statusLabels[orderData.status]}</span>
+
+                {orderData.status < 9 ? (
+                  <div className="step-box next">
+                    <div className="icon-circle">
+                      {animationsList[orderData.status + 1] ? (
+                        <Lottie animationData={animationsList[orderData.status + 1]} loop={false} style={{ width: 40, height: 40 }} />
+                      ) : (
+                        <span style={{ fontSize: "24px", color: "gray" }}>✅</span>
+                      )}
+                    </div>
+                    <span className="step-label">{statusLabels[orderData.status + 1]}</span>
+                  </div>
+                ) : (
+                  <div className="step-box empty"></div>
+                )}
               </div>
 
-              {orderData.status < 8 ? (
-                <div className="step-box next">
-                  <div className="icon-circle">
-                    <Lottie animationData={animationsList[orderData.status + 1]} loop={false} style={{ width: 40, height: 40 }} />
-                  </div>
-                  <span className="step-label">{statusLabels[orderData.status + 1]}</span>
-                </div>
-              ) : (
-                <div className="step-box empty"></div>
-              )}
-            </div>
-
-            <div className="info-grid">
-              
-              <div className="widget">
-                <div className="info-row">
-                  <div>
-                    <div className="info-label">{t.customerInfo}</div>
-                    <div className="info-value" style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-                      {renderCustomerName()}
+              <div className="info-grid">
+                
+                <div className="widget">
+                  <div className="info-row">
+                    <div>
+                      <div className="info-label">{t.customerInfo}</div>
+                      <div className="info-value" style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                        {renderCustomerName()}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
+                      <div className="info-label">{t.phone}</div>
+                      <div className="info-value" dir="ltr">
+                        {renderPhoneNumber()}
+                      </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
-                    <div className="info-label">{t.phone}</div>
-                    <div className="info-value" dir="ltr">
-                      {renderPhoneNumber()}
+                  
+                  <hr style={{ borderTop: '1px solid var(--glass-border)', margin: '15px 0' }} />
+                  
+                  <div className="info-row">
+                    <div>
+                      <div className="info-label">{t.date}</div>
+                      <div className="info-value">{orderData.date}</div>
+                    </div>
+                    <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
+                      <div className="info-label">{t.items}</div>
+                      <div className="info-value">{orderData.items}</div>
                     </div>
                   </div>
                 </div>
-                
-                <hr style={{ borderTop: '1px solid var(--glass-border)', margin: '15px 0' }} />
-                
-                <div className="info-row">
-                  <div>
-                    <div className="info-label">{t.date}</div>
-                    <div className="info-value">{orderData.date}</div>
+
+                <div className="widget price-widget">
+                  <div className="price-usd">${orderData.amountUSD}</div>
+                  
+                  <div className="price-calc-row">
+                    <span>{t.equals}</span>
+                    <span>{orderData.amountIQD.toLocaleString()} {t.currencyIQD}</span>
                   </div>
-                  <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
-                    <div className="info-label">{t.items}</div>
-                    <div className="info-value">{orderData.items}</div>
+                  
+                  <div className="price-calc-row price-delivery">
+                    <span>{t.deliveryFee}</span>
+                    <span>+{orderData.shippingIQD.toLocaleString()} {t.currencyIQD}</span>
+                  </div>
+                  
+                  <hr className="price-divider" />
+                  
+                  <div className="price-total">
+                    <span>{t.totalAmount}</span>
+                    <span>{(orderData.amountIQD + orderData.shippingIQD).toLocaleString()} {t.currencyIQD}</span>
                   </div>
                 </div>
+
               </div>
 
-              <div className="widget price-widget">
-                <div className="price-usd">${orderData.amountUSD}</div>
-                
-                <div className="price-calc-row">
-                  <span>{t.equals}</span>
-                  <span>{orderData.amountIQD.toLocaleString()} {t.currencyIQD}</span>
-                </div>
-                
-                <div className="price-calc-row price-delivery">
-                  <span>{t.deliveryFee}</span>
-                  <span>+{orderData.shippingIQD.toLocaleString()} {t.currencyIQD}</span>
-                </div>
-                
-                <hr className="price-divider" />
-                
-                <div className="price-total">
-                  <span>{t.totalAmount}</span>
-                  <span>{(orderData.amountIQD + orderData.shippingIQD).toLocaleString()} {t.currencyIQD}</span>
+              <button onClick={handleDownloadPDF} className="print-receipt-btn">
+                <span>📄</span> {t.printBtn}
+              </button>
+
+              {/* YENİ EKLENEN İLETİŞİM BÖLÜMÜ */}
+              <div style={{ marginTop: "25px", paddingTop: "20px", borderTop: "1px solid var(--glass-border)" }}>
+                <p style={{ textAlign: "center", fontSize: "14px", color: "var(--text-muted)", marginBottom: "15px", fontWeight: "bold" }}>
+                  {t.needHelp}
+                </p>
+                <div style={{ display: "flex", justifyContent: "center", gap: "15px", flexWrap: "wrap" }}>
+                  
+                  {/* WhatsApp Butonu */}
+                  <button 
+                    onClick={() => {
+                      const phoneNumber = "9647517363196"; 
+                      const message = encodeURIComponent(`${t.waMessage}${orderData.id}`);
+                      window.open(`https://wa.me/${phoneNumber}?text=${message}`, '_blank');
+                    }} 
+                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 20px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #25D366, #128C7E)", color: "white", fontWeight: "bold", cursor: "pointer", fontSize: "14px", boxShadow: "0 4px 15px rgba(37, 211, 102, 0.3)", transition: "transform 0.2s" }}
+                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                  >
+                    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.383 0 0 5.383 0 12.031c0 2.124.553 4.195 1.604 6.01L.063 23.94l6.046-1.584A11.96 11.96 0 0 0 12.031 24c6.648 0 12.031-5.383 12.031-12.031S18.679 0 12.031 0zm0 21.996c-1.802 0-3.567-.485-5.115-1.403l-.367-.218-3.799.996.996-3.799-.218-.367c-.918-1.548-1.403-3.313-1.403-5.115 0-5.546 4.514-10.06 10.06-10.06 5.546 0 10.06 4.514 10.06 10.06 0 5.546-4.514 10.06-10.06 10.06zm5.524-7.534c-.303-.152-1.793-.886-2.071-.987-.278-.101-.48-.152-.682.152-.202.303-.783.987-.96 1.189-.177.202-.354.227-.657.076-1.353-.687-2.457-1.442-3.411-3.056-.202-.34-.025-.525.126-.676.136-.136.303-.354.455-.53.152-.177.202-.303.303-.505.101-.202.051-.38-.025-.531-.076-.152-.682-1.641-.934-2.247-.247-.591-.499-.51-.682-.52-.177-.01-.38-.01-.581-.01-.202 0-.53.076-.808.38-.278.303-1.061 1.035-1.061 2.525 0 1.49 1.086 2.93 1.237 3.132.152.202 2.134 3.258 5.166 4.566 2.062.89 2.658.747 3.143.626.687-.17 1.793-.732 2.046-1.44.253-.708.253-1.314.177-1.44-.076-.126-.278-.202-.581-.354z"/></svg>
+                    WhatsApp
+                  </button>
+                  
+                  {/* Instagram Butonu */}
+                  <button 
+                    onClick={() => window.open('https://instagram.com/dalin.shoping', '_blank')} 
+                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 20px", borderRadius: "12px", border: "none", background: "linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)", color: "white", fontWeight: "bold", cursor: "pointer", fontSize: "14px", boxShadow: "0 4px 15px rgba(220, 39, 67, 0.3)", transition: "transform 0.2s" }}
+                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                  >
+                    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                    Instagram
+                  </button>
                 </div>
               </div>
+              {/* İLETİŞİM BÖLÜMÜ SONU */}
 
             </div>
-
-            <button onClick={handleDownloadPDF} className="print-receipt-btn">
-              <span>📄</span> {t.printBtn}
-            </button>
-
           </div>
         )}
       </div>

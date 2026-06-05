@@ -5,6 +5,10 @@ import { doc, setDoc, collection, getDocs, deleteDoc, updateDoc } from "firebase
 import { db } from "../../firebase"; 
 
 export default function AdminPanel() {
+  // --- ADMIN AUTH ---
+  const [isAuth, setIsAuth] = useState(false);
+  const [passInput, setPassInput] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<any[]>([]); 
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -17,22 +21,58 @@ export default function AdminPanel() {
   const [bulkStatus, setBulkStatus] = useState<number>(0);
 
   // --- CANLI KUR HESAPLAYICI (USD -> IQD) ---
-  const [exchangeRate, setExchangeRate] = useState<number>(1200); // 1 USD = 1200 IQD varsayilan
+  const [exchangeRate, setExchangeRate] = useState<number>(1200); 
 
-  // --- FORM DATA (Musteri Dili eklendi) ---
+  // --- DINAR SÜRÜCÜSÜ KONTROLÜ (Kilitlenmeyi Önlemek İçin) ---
+  const [isIqdDriving, setIsIqdDriving] = useState(false);
+
+  // --- OTOMATIK TARIH ---
+  const getTodayDate = () => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  };
+
+  // --- FORM DATA ---
   const [formData, setFormData] = useState({
     orderCode: "",
-    title: "Mr", 
-    customerLang: "ku", // Varsayilan dil: Kurtce
+    title: "Miss", 
+    customerLang: "ku", 
     fullName: "",
     fullPhone: "",
     items: 1,
-    date: "",
+    date: getTodayDate(),
     amountUSD: 0,
     amountIQD: 0,
-    shippingIQD: 5000, // Varsayilan 5000 yapildi
+    shippingIQD: 5000, 
     status: 0,
   });
+
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("adminAuth") === "yes") {
+      setIsAuth(true);
+    }
+    fetchOrders();
+  }, []);
+
+  // --- KOD KONTROLU (UYARI ICIN) ---
+  useEffect(() => {
+    let code = formData.orderCode.trim().toUpperCase();
+    if (/^\d+$/.test(code)) code = "DS" + code;
+    const exists = orders.some(o => o.id === code);
+    setIsEditing(exists);
+  }, [formData.orderCode, orders]);
+
+  const handleLogin = (e: any) => {
+    e.preventDefault();
+    if (passInput === "dalin1998") {
+      setIsAuth(true);
+      localStorage.setItem("adminAuth", "yes");
+    } else {
+      alert("Yanlis sifre!");
+    }
+  };
 
   const fetchOrders = async () => {
     setLoadingOrders(true);
@@ -50,21 +90,41 @@ export default function AdminPanel() {
     setSelectedOrders([]); 
   };
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
   const handleChange = (e: any) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // DOLAR YAZINCA DINAR HESAPLAR
   const handleUSDChange = (e: any) => {
     const usd = e.target.value === "" ? 0 : Number(e.target.value);
+    setIsIqdDriving(false); // Dolar tetiklendiği an Dinar sürücülüğü biter
     setFormData({ 
       ...formData, 
       amountUSD: usd, 
       amountIQD: usd * exchangeRate 
     });
+  };
+
+  // DINAR YAZINCA DOLARI HESAPLAR VEYA KORUR
+  const handleIQDChange = (e: any) => {
+    const iqd = e.target.value === "" ? 0 : Number(e.target.value);
+    
+    // Eğer Dolar henüz 0 ise ya da zaten Dinar yazarak başladıysak otomatik hesaplamaya devam et
+    if (formData.amountUSD === 0 || isIqdDriving) {
+      const newUsd = exchangeRate > 0 ? Number((iqd / exchangeRate).toFixed(2)) : 0;
+      setFormData({ 
+        ...formData, 
+        amountIQD: iqd,
+        amountUSD: newUsd
+      });
+      setIsIqdDriving(iqd > 0);
+    } else {
+      // Eğer kullanıcı önce Dolar girip sonra Dinarı manuel yuvarlıyorsa Doları koru
+      setFormData({ 
+        ...formData, 
+        amountIQD: iqd
+      });
+    }
   };
 
   const handleRateChange = (e: any) => {
@@ -119,8 +179,9 @@ export default function AdminPanel() {
       alert("✅ Order Successfully Saved / Updated!");
       
       setFormData({
-        orderCode: "", title: "Mr", customerLang: "ku", fullName: "", fullPhone: "", items: 1, date: "", amountUSD: 0, amountIQD: 0, shippingIQD: 5000, status: 0
+        orderCode: "", title: "Miss", customerLang: "ku", fullName: "", fullPhone: "", items: 1, date: getTodayDate(), amountUSD: 0, amountIQD: 0, shippingIQD: 5000, status: 0
       });
+      setIsIqdDriving(false);
       fetchOrders(); 
       
     } catch (error) {
@@ -131,14 +192,15 @@ export default function AdminPanel() {
   };
 
   const handleEdit = (order: any) => {
+    setIsIqdDriving(false);
     setFormData({
       orderCode: order.id,
-      title: order.title || "Mr",
+      title: order.title || "Miss",
       customerLang: order.customerLang || "ku",
       fullName: order._realName || "",
       fullPhone: order._realPhone || "",
       items: order.items || 1,
-      date: order.date || "",
+      date: order.date || getTodayDate(),
       amountUSD: order.amountUSD || 0,
       amountIQD: order.amountIQD || 0,
       shippingIQD: order.shippingIQD !== undefined ? order.shippingIQD : 5000,
@@ -163,66 +225,58 @@ export default function AdminPanel() {
   const sendWhatsApp = (order: any) => {
     const lang = order.customerLang || "ku";
     
-    // Status İsimleri
     const statusTexts = {
-      ku: ["داواکاری کرا", "داواکاری کڕدرا", "شین ئامادەی دەکات", "نێردرا بۆ دوبەی", "گەیشتە دوبەی", "لە دوبەی چاوەڕێ دەکات", "بەرەو عێراق بەڕێکەوت", "وەرگیرا و پاکەت دەکرێت", "لە ڕێگایە بۆ گەیاندن"],
-      ar: ["تم الطلب", "تم شراء الطلب", "تجهيز بواسطة شي إن", "شحن إلى دبي", "وصل إلى دبي", "في الانتظار بدبي", "غادر إلى العراق", "تم الاستلام والتغليف", "في الطريق للتسليم"]
+      ku: ["داواکاری کرا", "داواکاری کڕدرا", "شین ئامادەی دەکات", "نێردرا بۆ دوبەی", "گەیشتە دوبەی", "لە دوبەی چاوەڕێ دەکات", "بەرەو کوردستان بەڕێکەوت", "وەرگیرا و پاکەت دەکرێت", "لە ڕێگایە بۆ گەیاندن", "گەیەنرا"],
+      ar: ["تم الطلب", "تم شراء الطلب", "تجهيز بواسطة شي إن", "شحن إلى دبي", "وصل إلى دبي", "في الانتظار بدبي", "في الطريق إلى كردستان", "تم الاستلام والتغليف", "في الطريق للتسليم", "تم التوصيل"]
     };
 
-    // Aşama Süreleri
     const durations = {
-      ku: ["لە چاوەڕوانیدایە", "12 - 24 کاتژمێر", "1 - 3 ڕۆژ", "6 - 10 ڕۆژ", "1 - 2 ڕۆژ", "1 - 2 ڕۆژ", "6 - 7 ڕۆژ", "یەک ڕۆژ", "1 - 2 ڕۆژ"],
-      ar: ["قيد الانتظار", "12 - 24 ساعة", "1 - 3 أيام", "6 - 10 أيام", "1 - 2 أيام", "1 - 2 أيام", "6 - 7 أيام", "يوم واحد", "2 - 3 أيام"]
+      ku: ["لە چاوەڕوانیدایە", "12 - 24 کاتژمێر", "1 - 3 ڕۆژ", "6 - 10 ڕۆژ", "1 - 2 ڕۆژ", "1 - 2 ڕۆژ", "6 - 7 ڕۆژ", "یەک ڕۆژ", "1 - 2 ڕۆژ", "گەیەنرا"],
+      ar: ["قيد الانتظار", "12 - 24 ساعة", "1 - 3 أيام", "6 - 10 أيام", "1 - 2 أيام", "1 - 2 أيام", "6 - 7 أيام", "يوم واحد", "2 - 3 أيام", "تم التوصيل"]
     };
     
     const trackingLink = `${window.location.origin}`; 
     
-    // Anlık Tarih/Saat Formatlama (Örn: 04.06.2026 13:30)
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const currentDateStr = `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-    // Bir Sonraki Aşama
-    const nextStageName = order.status < 8 
+    const nextStageName = order.status < 9 
       ? statusTexts[lang as "ku"|"ar"][order.status + 1] 
       : (lang === 'ku' ? 'گەیەنرا (Delivered)' : 'تم التوصيل (Delivered)');
 
-    // Tahmini Varış Tarihi Hesaplama (Siparişe 20 gün ekle)
     let estDate = "";
     if (order.date) {
       const parts = order.date.split('.');
       if(parts.length === 3) {
         const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-        d.setDate(d.getDate() + 20); // Ortalama 20 gün teslimat süresi
+        d.setDate(d.getDate() + 20); 
         estDate = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`;
       }
     }
     if(!estDate) estDate = (lang === 'ku' ? "15-20 ڕۆژ" : "15-20 يوماً");
 
-    // Dil bazlı ayrılmış şablonlar
     let message = "";
     let greeting = "";
 
     if (lang === "ku") {
-      // SADECE KÜRTÇE ŞABLON
       greeting = `سڵاو بەڕێز ${order.title === 'Miss' ? 'خان ' + order._realName : 'کاک ' + order._realName}`;
       message = `${greeting}،\n\n` +
                 `📅 بەرواری نامە: ${currentDateStr}\n\n` +
                 `📦 ژمارەی داواکاری: *${order.id}*\n` +
                 `🔄 قۆناغی ئێستا: *${statusTexts.ku[order.status]}*\n` +
                 `⏳ کاتی پێشبینیکراو بۆ ئەم قۆناغە: *${durations.ku[order.status]}*\n\n` +
-                `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` +
+                (order.status < 9 ? `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` : '') +
                 `📆 کاتی خەمڵێنراوی گەیشتن: *${estDate}*\n\n` +
                 `🔗 بۆ بەدواداچوونی وردی داواکارییەکەت، سەردانی ئەم بەستەرە بکە:\n${trackingLink}`;
     } else {
-      // SADECE ARAPÇA ŞABLON
       greeting = `مرحباً ${order.title === 'Miss' ? 'الآنسة' : 'السيد'} ${order._realName}`;
       message = `${greeting}،\n\n` +
                 `📅 تاريخ الرسالة: ${currentDateStr}\n\n` +
                 `📦 رقم الطلب: *${order.id}*\n` +
                 `🔄 المرحلة الحالية: *${statusTexts.ar[order.status]}*\n` +
                 `⏳ الوقت المتوقع لهذه المرحلة: *${durations.ar[order.status]}*\n\n` +
-                `⏭️ المرحلة التالية: *${nextStageName}*\n\n` +
+                (order.status < 9 ? `⏭️ المرحلة التالية: *${nextStageName}*\n\n` : '') +
                 `📆 تاريخ الوصول المتوقع: *${estDate}*\n\n` +
                 `🔗 لتتبع طلبك بالتفصيل، يرجى زيارة الرابط التالي:\n${trackingLink}`;
     }
@@ -231,10 +285,7 @@ export default function AdminPanel() {
     if (phone.startsWith('0')) phone = phone.substring(1);
     if (!phone.startsWith('964')) phone = '964' + phone;
 
-    // Emojiler ve özel karakterler için URLSearchParams kullanımı
-    const params = new URLSearchParams({ text: message });
-    window.location.href =
-  `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
+    window.location.href = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
   };
 
   const enStatusLabels = [
@@ -244,9 +295,10 @@ export default function AdminPanel() {
     "3 - Shipped to Dubai",
     "4 - Arrived in Dubai",
     "5 - Waiting in Dubai",
-    "6 - Departed for Iraq",
+    "6 - On the way to Kurdistan",
     "7 - Received & Packing",
-    "8 - Out for Delivery"
+    "8 - Out for Delivery",
+    "9 - Delivered"
   ];
 
   const handleQuickStatusChange = async (id: string, newStatus: string) => {
@@ -337,6 +389,18 @@ export default function AdminPanel() {
     return 0;
   });
 
+  if (!isAuth) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", background: "#f8fafc", fontFamily: "sans-serif" }}>
+        <form onSubmit={handleLogin} style={{ background: "white", padding: "40px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", textAlign: "center", width: "350px" }}>
+          <h2 style={{ color: "#059669", marginBottom: "20px" }}>🔒 Admin Login</h2>
+          <input type="password" value={passInput} onChange={(e) => setPassInput(e.target.value)} placeholder="Enter admin password" style={{ width: "100%", padding: "12px", marginBottom: "20px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", boxSizing: "border-box" }} />
+          <button type="submit" style={{ background: "#059669", color: "white", padding: "12px 20px", border: "none", borderRadius: "10px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", width: "100%" }}>Login</button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -360,24 +424,28 @@ export default function AdminPanel() {
       <div className="admin-wrap">
         <h1 style={{ color: "#059669", textAlign: "center", marginBottom: "30px", fontSize: "2rem", fontWeight: "900" }}>⚙️ DALIN ADMIN DASHBOARD</h1>
         
-        {}
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "15px", background: "#f3f5f8", padding: "30px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
           
           <div className="form-grid">
-            <div className="form-col" style={{ flex: "1 1 30%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>کۆدی داواکاری(DS215 or 215):</label>
-              <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", fontWeight: "bold" }} />
+            <div className="form-col" style={{ flex: "1 1 30%", position: "relative" }}>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:کۆدی داواکاری</label>
+              {isEditing && (
+                <div style={{ position: "absolute", top: "-5px", right: "0", background: "#fef3c7", color: "#d97706", padding: "2px 8px", borderRadius: "5px", fontSize: "11px", fontWeight: "bold" }}>
+                  ⚠️ کودەکە هەیە ئێستا گۆرانکاری دەکەی
+                </div>
+              )}
+              <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", fontWeight: "bold", boxSizing: "border-box" }} />
             </div>
             <div className="form-col" style={{ flex: "1 1 15%" }}>
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:نازناو</label>
-              <select name="title" value={formData.title} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold" }}>
+              <select name="title" value={formData.title} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", boxSizing: "border-box" }}>
                 <option value="Mr">Mr.</option>
                 <option value="Miss">Miss.</option>
               </select>
             </div>
             <div className="form-col" style={{ flex: "1 1 20%" }}>
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:زمانی کڕیار</label>
-              <select name="customerLang" value={formData.customerLang} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold" }}>
+              <select name="customerLang" value={formData.customerLang} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", boxSizing: "border-box" }}>
                 <option value="ku">Kurdish</option>
                 <option value="ar">Arabic</option>
               </select>
@@ -387,22 +455,22 @@ export default function AdminPanel() {
           <div className="form-grid">
             <div className="form-col">
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ناوی تەواوی کڕیار</label>
-              <input type="text" placeholder="e.g., Dahat" name="fullName" value={formData.fullName} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <input type="text" placeholder="e.g., Dahat" name="fullName" value={formData.fullName} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div className="form-col">
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی مۆبایل</label>
-              <input type="text" placeholder="e.g., 0750 123 4567" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <input type="text" placeholder="e.g., 0750 123 4567" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-col">
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی کاڵاکان</label>
-              <input type="number" name="items" value={formData.items} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <input type="number" name="items" value={formData.items} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div className="form-col">
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:بەرواری داواکاری</label>
-              <input type="text" placeholder="03.06.2026" name="date" value={formData.date} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <input type="text" placeholder="03.06.2026" name="date" value={formData.date} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
             </div>
           </div>
 
@@ -418,15 +486,15 @@ export default function AdminPanel() {
                   </select>
                 </span>
               </div>
-              <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none" }} />
+              <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div className="form-col-3">
               <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دینار</label>
-              <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", background: "#f8fafc" }} />
+              <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleIQDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", background: "#f8fafc", boxSizing: "border-box" }} />
             </div>
             <div className="form-col-3">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>کرێی گەیاندن:</label>
-              <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", cursor: "pointer", appearance: "menulist" }}>
+              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:کرێی گەیاندن</label>
+              <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", cursor: "pointer", appearance: "menulist", boxSizing: "border-box" }}>
                 <option value={5000}>5000 IQD</option>
                 <option value={0}>0 IQD (Free)</option>
               </select>
@@ -434,8 +502,8 @@ export default function AdminPanel() {
           </div>
 
           <div>
-            <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دۆخی داواکاری(0 to 8):</label>
-            <select name="status" value={formData.status} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #059669", outline: "none", fontWeight: "bold", color: "#059669", cursor: "pointer", appearance: "menulist" }}>
+            <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دۆخی داواکاری</label>
+            <select name="status" value={formData.status} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #059669", outline: "none", fontWeight: "bold", color: "#059669", cursor: "pointer", appearance: "menulist", boxSizing: "border-box" }}>
               {enStatusLabels.map((label, idx) => (
                 <option key={idx} value={idx}>{label}</option>
               ))}
@@ -447,7 +515,6 @@ export default function AdminPanel() {
           </button>
         </form>
 
-        {}
         <div style={{ marginTop: "50px", background: "white", padding: "30px 20px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
           
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
