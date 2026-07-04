@@ -24,6 +24,7 @@ type Order = {
   status?: number;
   _realName?: string;
   _realPhone?: string;
+  _deletedAt?: string;
 };
 
 type FormData = {
@@ -40,33 +41,31 @@ type FormData = {
   status: number;
 };
 
+type StatusOption = {
+  value: number;
+  label: string;
+  shortLabel: string;
+  tone: string;
+};
+
 const ADMIN_PASSWORD = "dalin1998";
 
-const STATUS_LABELS = [
-  "0 - Order Placed",
-  "1 - Order Purchased",
-  "2 - Preparing by Shein",
-  "3 - Shipped to Dubai",
-  "4 - Arrived in Dubai",
-  "5 - Waiting in Dubai",
-  "6 - On the way to Kurdistan",
-  "7 - Received & Packing",
-  "8 - Out for Delivery",
-  "9 - Delivered",
+const STATUS_OPTIONS: StatusOption[] = [
+  { value: 0, label: "0 - Order Placed", shortLabel: "0 Placed", tone: "neutral" },
+  { value: 2, label: "2 - Preparing by Shein", shortLabel: "2 Preparing", tone: "amber" },
+  { value: 3, label: "3 - Shipped to Dubai", shortLabel: "3 Shipped", tone: "purple" },
+  { value: 4, label: "4 - Arrived in Dubai", shortLabel: "4 Dubai", tone: "cyan" },
+  { value: 6, label: "6 - On the way to Kurdistan", shortLabel: "6 Kurdistan", tone: "orange" },
+  { value: 7, label: "7 - Received & Packing", shortLabel: "7 Packing", tone: "indigo" },
+  { value: 8, label: "8 - Out for Delivery", shortLabel: "8 Delivery", tone: "green" },
+  { value: 9, label: "9 - Delivered", shortLabel: "9 Delivered", tone: "emerald" },
 ];
 
-const STATUS_TONE = [
-  "neutral",
-  "blue",
-  "amber",
-  "purple",
-  "cyan",
-  "slate",
-  "orange",
-  "indigo",
-  "green",
-  "emerald",
-];
+const STATUS_LABELS: Record<number, string> = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item.label]));
+const REMOVED_STATUS_MAP: Record<number, number> = {
+  1: 2,
+  5: 6,
+};
 
 function getTodayDate() {
   const d = new Date();
@@ -99,6 +98,23 @@ function normalizeOrderCode(value: string) {
   return code;
 }
 
+function normalizeActiveStatus(value?: number | string) {
+  const numeric = Number(value || 0);
+  if (REMOVED_STATUS_MAP[numeric] !== undefined) return REMOVED_STATUS_MAP[numeric];
+  return STATUS_OPTIONS.some((item) => item.value === numeric) ? numeric : 0;
+}
+
+function getStatusOption(value?: number | string) {
+  const activeStatus = normalizeActiveStatus(value);
+  return STATUS_OPTIONS.find((item) => item.value === activeStatus) || STATUS_OPTIONS[0];
+}
+
+function getNextStatus(value: number) {
+  const currentIndex = STATUS_OPTIONS.findIndex((item) => item.value === normalizeActiveStatus(value));
+  if (currentIndex === -1 || currentIndex >= STATUS_OPTIONS.length - 1) return null;
+  return STATUS_OPTIONS[currentIndex + 1].value;
+}
+
 function formatIQD(value?: number) {
   return `${Number(value || 0).toLocaleString()} IQD`;
 }
@@ -118,6 +134,18 @@ function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return fallback;
+}
+
+function StatusOptions({ compact = false }: { compact?: boolean }) {
+  return (
+    <>
+      {STATUS_OPTIONS.map((status) => (
+        <option key={status.value} value={status.value}>
+          {compact ? status.shortLabel : status.label}
+        </option>
+      ))}
+    </>
+  );
 }
 
 export default function AdminPanel() {
@@ -164,14 +192,14 @@ export default function AdminPanel() {
     }
 
     if (filterStatus !== "all") {
-      result = result.filter((order) => Number(order.status || 0) === Number(filterStatus));
+      result = result.filter((order) => normalizeActiveStatus(order.status) === Number(filterStatus));
     }
 
     result.sort((a, b) => {
-      const valA = a[sortConfig.key as keyof Order] ?? "";
-      const valB = b[sortConfig.key as keyof Order] ?? "";
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      const rawA = sortConfig.key === "status" ? normalizeActiveStatus(a.status) : a[sortConfig.key as keyof Order] ?? "";
+      const rawB = sortConfig.key === "status" ? normalizeActiveStatus(b.status) : b[sortConfig.key as keyof Order] ?? "";
+      if (rawA < rawB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (rawA > rawB) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
 
@@ -179,7 +207,7 @@ export default function AdminPanel() {
   }, [orders, searchTerm, filterStatus, sortConfig]);
 
   const stats = useMemo(() => {
-    const delivered = orders.filter((order) => Number(order.status || 0) === 9).length;
+    const delivered = orders.filter((order) => normalizeActiveStatus(order.status) === 9).length;
     const active = orders.length - delivered;
     const totalUSD = orders.reduce((sum, order) => sum + Number(order.amountUSD || 0), 0);
     return { total: orders.length, active, delivered, totalUSD };
@@ -192,7 +220,10 @@ export default function AdminPanel() {
       const querySnapshot = await getDocs(collection(db, "orders"));
       const ordersList: Order[] = [];
       querySnapshot.forEach((orderDoc) => {
-        ordersList.push({ id: orderDoc.id, ...(orderDoc.data() as Omit<Order, "id">) });
+        const data = orderDoc.data() as Omit<Order, "id">;
+        if (!data._deletedAt) {
+          ordersList.push({ id: orderDoc.id, ...data });
+        }
       });
       setOrders(ordersList);
     } catch (error: unknown) {
@@ -211,7 +242,7 @@ export default function AdminPanel() {
     if (passInput === ADMIN_PASSWORD) {
       setIsAuth(true);
       localStorage.setItem("adminAuth", "yes");
-      setNotice({ type: "success", text: "Welcome back. Dashboard is ready." });
+      setNotice({ type: "success", text: "Dashboard ready." });
     } else {
       setNotice({ type: "error", text: "Wrong password." });
     }
@@ -294,7 +325,7 @@ export default function AdminPanel() {
           amountUSD: Number(formData.amountUSD),
           amountIQD: Number(formData.amountIQD),
           shippingIQD: Number(formData.shippingIQD),
-          status: Number(formData.status),
+          status: normalizeActiveStatus(formData.status),
           _realName: formData.fullName.trim(),
           _realPhone: formData.fullPhone.trim(),
           updatedAt: new Date().toISOString(),
@@ -302,7 +333,7 @@ export default function AdminPanel() {
         { merge: true }
       );
 
-      setNotice({ type: "success", text: isEditing ? `${code} updated successfully.` : `${code} saved successfully.` });
+      setNotice({ type: "success", text: isEditing ? `${code} updated.` : `${code} saved.` });
       setFormData(makeEmptyForm());
       setIsIqdDriving(false);
       await fetchOrders();
@@ -327,47 +358,83 @@ export default function AdminPanel() {
       amountUSD: Number(order.amountUSD || 0),
       amountIQD: Number(order.amountIQD || 0),
       shippingIQD: order.shippingIQD !== undefined ? Number(order.shippingIQD) : 5000,
-      status: Number(order.status || 0),
+      status: normalizeActiveStatus(order.status),
     });
-    setNotice({ type: "info", text: `${order.id} loaded. Edit the form and press Save/Update.` });
+    setNotice({ type: "info", text: `${order.id} loaded. Edit and press Save Update.` });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleDelete(id: string) {
-    const typed = window.prompt(`Type ${id} to permanently delete this order:`);
-    if (typed !== id) return;
+    const confirmed = window.confirm(`Permanently delete ${id} from Firebase?`);
+    if (!confirmed) return;
 
     try {
       await deleteDoc(doc(db, "orders", id));
+      setOrders((prev) => prev.filter((order) => order.id !== id));
+      setSelectedOrders((prev) => prev.filter((orderId) => orderId !== id));
       setNotice({ type: "success", text: `${id} deleted.` });
-      await fetchOrders();
     } catch (error: unknown) {
       console.error("Delete order error:", error);
-      setNotice({ type: "error", text: getErrorMessage(error, "Delete failed. Firestore rules may be blocking delete for safety.") });
+      setNotice({ type: "error", text: getErrorMessage(error, "Delete failed. Firestore Rules must allow delete.") });
     }
   }
 
   function sendWhatsApp(order: Order) {
-    const lang = order.customerLang || "ku";
+    const customerLang = order.customerLang === "ar" ? "ar" : "ku";
+    const currentStatus = normalizeActiveStatus(order.status);
+    const nextStatus = getNextStatus(currentStatus);
 
-    const statusTexts = {
-      ku: ["داواکاری کرا", "داواکاری کڕدرا", "شین ئامادەی دەکات", "نێردرا بۆ دوبەی", "گەیشتە دوبەی", "لە دوبەی چاوەڕێ دەکات", "بەرەو کوردستان بەڕێکەوت", "وەرگیرا و پاکەت دەکرێت", "لە ڕێگایە بۆ گەیاندن", "گەیەنرا"],
-      ar: ["تم الطلب", "تم شراء الطلب", "تجهيز بواسطة شي إن", "شحن إلى دبي", "وصل إلى دبي", "في الانتظار بدبي", "في الطريق إلى كردستان", "تم الاستلام والتغليف", "في الطريق للتسليم", "تم التوصيل"],
+    const statusTexts: Record<"ku" | "ar", Record<number, string>> = {
+      ku: {
+        0: "داواکاری کرا",
+        2: "شین ئامادەی دەکات",
+        3: "نێردرا بۆ دوبەی",
+        4: "گەیشتە دوبەی",
+        6: "بەرەو کوردستان بەڕێکەوت",
+        7: "وەرگیرا و پاکەت دەکرێت",
+        8: "لە ڕێگایە بۆ گەیاندن",
+        9: "گەیەنرا",
+      },
+      ar: {
+        0: "تم الطلب",
+        2: "تجهيز بواسطة شي إن",
+        3: "شحن إلى دبي",
+        4: "وصل إلى دبي",
+        6: "في الطريق إلى كردستان",
+        7: "تم الاستلام والتغليف",
+        8: "في الطريق للتسليم",
+        9: "تم التوصيل",
+      },
     };
 
-    const durations = {
-      ku: ["لە چاوەڕوانیدایە", "12 - 24 کاتژمێر", "1 - 3 ڕۆژ", "6 - 10 ڕۆژ", "1 - 2 ڕۆژ", "1 - 2 ڕۆژ", "6 - 7 ڕۆژ", "یەک ڕۆژ", "1 - 2 ڕۆژ", "گەیەنرا"],
-      ar: ["قيد الانتظار", "12 - 24 ساعة", "1 - 3 أيام", "6 - 10 أيام", "1 - 2 أيام", "1 - 2 أيام", "6 - 7 أيام", "يوم واحد", "2 - 3 أيام", "تم التوصيل"],
+    const durations: Record<"ku" | "ar", Record<number, string>> = {
+      ku: {
+        0: "لە چاوەڕوانیدایە",
+        2: "1 - 3 ڕۆژ",
+        3: "6 - 10 ڕۆژ",
+        4: "1 - 2 ڕۆژ",
+        6: "6 - 7 ڕۆژ",
+        7: "یەک ڕۆژ",
+        8: "1 - 2 ڕۆژ",
+        9: "گەیەنرا",
+      },
+      ar: {
+        0: "قيد الانتظار",
+        2: "1 - 3 أيام",
+        3: "6 - 10 أيام",
+        4: "1 - 2 أيام",
+        6: "6 - 7 أيام",
+        7: "يوم واحد",
+        8: "2 - 3 أيام",
+        9: "تم التوصيل",
+      },
     };
 
-    const customerLang = lang === "ar" ? "ar" : "ku";
-    const currentStatus = Number(order.status || 0);
     const trackingLink = `${window.location.origin}`;
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const currentDateStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-    const nextStageName = currentStatus < 9 ? statusTexts[customerLang][currentStatus + 1] : customerLang === "ku" ? "گەیەنرا (Delivered)" : "تم التوصيل (Delivered)";
+    const nextStageName = nextStatus !== null ? statusTexts[customerLang][nextStatus] : customerLang === "ku" ? "گەیەنرا (Delivered)" : "تم التوصيل (Delivered)";
 
     let estDate = "";
     if (order.date) {
@@ -388,16 +455,17 @@ export default function AdminPanel() {
 
     const message =
       customerLang === "ku"
-        ? `${greeting}،\n\n📅 بەرواری نامە: ${currentDateStr}\n\n📦 ژمارەی داواکاری: *${order.id}*\n🔄 قۆناغی ئێستا: *${statusTexts.ku[currentStatus]}*\n⏳ کاتی پێشبینیکراو بۆ ئەم قۆناغە: *${durations.ku[currentStatus]}*\n\n${currentStatus < 9 ? `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` : ""}📆 کاتی خەمڵێنراوی گەیشتن: *${estDate}*\n\n🔗 بۆ بەدواداچوونی وردی داواکارییەکەت، سەردانی ئەم بەستەرە بکە:\n${trackingLink}`
-        : `${greeting}،\n\n📅 تاريخ الرسالة: ${currentDateStr}\n\n📦 رقم الطلب: *${order.id}*\n🔄 المرحلة الحالية: *${statusTexts.ar[currentStatus]}*\n⏳ الوقت المتوقع لهذه المرحلة: *${durations.ar[currentStatus]}*\n\n${currentStatus < 9 ? `⏭️ المرحلة التالية: *${nextStageName}*\n\n` : ""}📆 تاريخ الوصول المتوقع: *${estDate}*\n\n🔗 لتتبع طلبك بالتفصيل، يرجى زيارة الرابط التالي:\n${trackingLink}`;
+        ? `${greeting}،\n\n📅 بەرواری نامە: ${currentDateStr}\n\n📦 ژمارەی داواکاری: *${order.id}*\n🔄 قۆناغی ئێستا: *${statusTexts.ku[currentStatus]}*\n⏳ کاتی پێشبینیکراو بۆ ئەم قۆناغە: *${durations.ku[currentStatus]}*\n\n${nextStatus !== null ? `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` : ""}📆 کاتی خەمڵێنراوی گەیشتن: *${estDate}*\n\n🔗 بۆ بەدواداچوونی وردی داواکارییەکەت، سەردانی ئەم بەستەرە بکە:\n${trackingLink}`
+        : `${greeting}،\n\n📅 تاريخ الرسالة: ${currentDateStr}\n\n📦 رقم الطلب: *${order.id}*\n🔄 المرحلة الحالية: *${statusTexts.ar[currentStatus]}*\n⏳ الوقت المتوقع لهذه المرحلة: *${durations.ar[currentStatus]}*\n\n${nextStatus !== null ? `⏭️ المرحلة التالية: *${nextStageName}*\n\n` : ""}📆 تاريخ الوصول المتوقع: *${estDate}*\n\n🔗 لتتبع طلبك بالتفصيل، يرجى زيارة الرابط التالي:\n${trackingLink}`;
 
     window.location.href = `https://api.whatsapp.com/send?phone=${cleanPhoneForWhatsApp(order._realPhone)}&text=${encodeURIComponent(message)}`;
   }
 
   async function handleQuickStatusChange(id: string, newStatus: string) {
     try {
-      await updateDoc(doc(db, "orders", id), { status: Number(newStatus), updatedAt: new Date().toISOString() });
-      setOrders((prev) => prev.map((order) => (order.id === id ? { ...order, status: Number(newStatus) } : order)));
+      const status = normalizeActiveStatus(newStatus);
+      await updateDoc(doc(db, "orders", id), { status, updatedAt: new Date().toISOString() });
+      setOrders((prev) => prev.map((order) => (order.id === id ? { ...order, status } : order)));
       setNotice({ type: "success", text: `${id} status updated.` });
     } catch (error: unknown) {
       console.error("Status update error:", error);
@@ -427,10 +495,11 @@ export default function AdminPanel() {
 
     setLoading(true);
     try {
+      const status = normalizeActiveStatus(bulkStatus);
       for (const id of selectedOrders) {
-        await updateDoc(doc(db, "orders", id), { status: Number(bulkStatus), updatedAt: new Date().toISOString() });
+        await updateDoc(doc(db, "orders", id), { status, updatedAt: new Date().toISOString() });
       }
-      setNotice({ type: "success", text: `${selectedOrders.length} orders updated to status ${bulkStatus}.` });
+      setNotice({ type: "success", text: `${selectedOrders.length} orders updated to ${STATUS_LABELS[status]}.` });
       await fetchOrders();
     } catch (error: unknown) {
       console.error("Bulk update error:", error);
@@ -446,19 +515,20 @@ export default function AdminPanel() {
       return;
     }
 
-    const typed = window.prompt(`Type DELETE ${selectedOrders.length} to delete selected orders:`);
-    if (typed !== `DELETE ${selectedOrders.length}`) return;
+    const confirmed = window.confirm(`Permanently delete ${selectedOrders.length} selected orders from Firebase?`);
+    if (!confirmed) return;
 
     setLoading(true);
     try {
       for (const id of selectedOrders) {
         await deleteDoc(doc(db, "orders", id));
       }
+      setOrders((prev) => prev.filter((order) => !selectedOrders.includes(order.id)));
       setNotice({ type: "success", text: `${selectedOrders.length} selected orders deleted.` });
-      await fetchOrders();
+      setSelectedOrders([]);
     } catch (error: unknown) {
       console.error("Bulk delete error:", error);
-      setNotice({ type: "error", text: getErrorMessage(error, "Bulk delete failed. Firestore rules may be blocking delete for safety.") });
+      setNotice({ type: "error", text: getErrorMessage(error, "Selected orders could not be deleted. Firestore Rules must allow delete.") });
     } finally {
       setLoading(false);
     }
@@ -474,13 +544,13 @@ export default function AdminPanel() {
           <form className="login-card" onSubmit={handleLogin}>
             <div className="login-badge">DS</div>
             <h1>Dalin Admin</h1>
-            <p>Secure staff dashboard for tracking orders.</p>
+            <p>Staff order dashboard</p>
             {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
             <input
               type="password"
               value={passInput}
               onChange={(e) => setPassInput(e.target.value)}
-              placeholder="Enter admin password"
+              placeholder="Admin password"
               autoFocus
             />
             <button type="submit">Login</button>
@@ -496,13 +566,13 @@ export default function AdminPanel() {
       <main className="admin-page">
         <section className="admin-shell">
           <header className="admin-header">
-            <div>
+            <div className="admin-heading">
               <span className="eyebrow">Dalin Shopping</span>
-              <h1>Admin Dashboard</h1>
-              <p>Manage orders, customer updates, WhatsApp messages and tracking status.</p>
+              <h1>Admin</h1>
+              <p>Fast order entry and status control.</p>
             </div>
             <div className="header-actions">
-              <Link href="/" className="secondary-link">View Tracking Page</Link>
+              <Link href="/" className="secondary-link">Home</Link>
               <button type="button" className="ghost-btn" onClick={fetchOrders} disabled={loadingOrders}>Refresh</button>
               <button type="button" className="danger-soft-btn" onClick={handleLogout}>Logout</button>
             </div>
@@ -512,113 +582,99 @@ export default function AdminPanel() {
           {fetchError && <div className="notice error">Firebase error: {fetchError}</div>}
 
           <section className="stats-grid">
-            <div className="stat-card">
-              <span>Total Orders</span>
-              <strong>{stats.total}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Active Orders</span>
-              <strong>{stats.active}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Delivered</span>
-              <strong>{stats.delivered}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Total USD</span>
-              <strong>{formatUSD(stats.totalUSD)}</strong>
-            </div>
+            <div className="stat-card"><span>Total</span><strong>{stats.total}</strong></div>
+            <div className="stat-card"><span>Active</span><strong>{stats.active}</strong></div>
+            <div className="stat-card"><span>Delivered</span><strong>{stats.delivered}</strong></div>
+            <div className="stat-card"><span>USD</span><strong>{formatUSD(stats.totalUSD)}</strong></div>
           </section>
 
           <section className="panel-card form-panel">
             <div className="panel-title-row">
               <div>
-                <span className="eyebrow">Order Form</span>
-                <h2>{isEditing ? "Update Existing Order" : "Add New Order"}</h2>
+                <span className="eyebrow">Quick Order</span>
+                <h2>{isEditing ? "Update Order" : "Add Order"}</h2>
               </div>
               {isEditing && <span className="edit-chip">Editing {normalizedCode}</span>}
             </div>
 
-            <form onSubmit={handleSubmit} className="order-form">
-              <div className="form-grid three">
-                <label>
-                  <span>Order Code</span>
-                  <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required placeholder="DS215 or 215" />
+            <form onSubmit={handleSubmit} className="quick-order-form">
+              <div className="form-strip">
+                <label className="field-code">
+                  <span>Code</span>
+                  <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required placeholder="215" />
                 </label>
-                <label>
+
+                <label className="field-title">
                   <span>Title</span>
                   <select name="title" value={formData.title} onChange={handleChange}>
-                    <option value="Mr">Mr.</option>
-                    <option value="Miss">Miss.</option>
+                    <option value="Mr">Mr</option>
+                    <option value="Miss">Miss</option>
                   </select>
                 </label>
-                <label>
-                  <span>Customer Language</span>
+
+                <label className="field-lang">
+                  <span>Lang</span>
                   <select name="customerLang" value={formData.customerLang} onChange={handleChange}>
                     <option value="ku">Kurdish</option>
                     <option value="ar">Arabic</option>
                   </select>
                 </label>
-              </div>
 
-              <div className="form-grid two">
-                <label>
-                  <span>Customer Full Name</span>
-                  <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required placeholder="Customer name" />
+                <label className="field-name">
+                  <span>Name</span>
+                  <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required placeholder="Customer" />
                 </label>
-                <label>
-                  <span>Phone Number</span>
-                  <input type="text" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required placeholder="0750 123 4567" />
-                </label>
-              </div>
 
-              <div className="form-grid two">
-                <label>
+                <label className="field-phone">
+                  <span>Phone</span>
+                  <input type="text" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required placeholder="0750..." />
+                </label>
+
+                <label className="field-items">
                   <span>Items</span>
                   <input type="number" min="1" name="items" value={formData.items} onChange={handleChange} required />
                 </label>
-                <label>
-                  <span>Order Date</span>
+
+                <label className="field-date">
+                  <span>Date</span>
                   <input type="text" name="date" value={formData.date} onChange={handleChange} required placeholder="04.07.2026" />
                 </label>
-              </div>
 
-              <div className="form-grid three">
-                <label>
+                <label className="field-usd">
                   <span className="label-with-select">
-                    Amount USD
+                    USD
                     <select value={exchangeRate} onChange={handleRateChange}>
-                      <option value={1200}>Rate 1200</option>
-                      <option value={1190}>Rate 1190</option>
+                      <option value={1200}>1200</option>
+                      <option value={1190}>1190</option>
                     </select>
                   </span>
                   <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required />
                 </label>
-                <label>
-                  <span>Amount IQD</span>
+
+                <label className="field-iqd">
+                  <span>IQD</span>
                   <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleIQDChange} required />
                 </label>
-                <label>
-                  <span>Delivery Fee</span>
+
+                <label className="field-ship">
+                  <span>Delivery</span>
                   <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange}>
-                    <option value={5000}>5000 IQD</option>
-                    <option value={0}>0 IQD (Free)</option>
+                    <option value={5000}>5000</option>
+                    <option value={0}>Free</option>
+                  </select>
+                </label>
+
+                <label className="field-status">
+                  <span>Status</span>
+                  <select name="status" value={formData.status} onChange={handleChange}>
+                    <StatusOptions />
                   </select>
                 </label>
               </div>
 
-              <label className="full-row">
-                <span>Order Status</span>
-                <select name="status" value={formData.status} onChange={handleChange}>
-                  {STATUS_LABELS.map((label, idx) => (
-                    <option key={idx} value={idx}>{label}</option>
-                  ))}
-                </select>
-              </label>
-
               <div className="form-actions">
                 <button type="button" className="ghost-btn" onClick={() => { setFormData(makeEmptyForm()); setNotice(null); }}>
-                  Clear Form
+                  Clear
                 </button>
                 <button type="submit" className="primary-btn" disabled={loading}>
                   {loading ? "Saving..." : isEditing ? "Save Update" : "Save Order"}
@@ -628,23 +684,21 @@ export default function AdminPanel() {
           </section>
 
           <section className="panel-card orders-panel">
-            <div className="panel-title-row compact">
+            <div className="panel-title-row orders-title-row">
               <div>
                 <span className="eyebrow">Orders</span>
-                <h2>Manage Orders <small>({displayedOrders.length})</small></h2>
+                <h2>Order List <small>({displayedOrders.length})</small></h2>
               </div>
               <div className="filter-row">
                 <input
                   type="text"
-                  placeholder="Search code, name or phone"
+                  placeholder="Search code, name, phone"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                  <option value="all">Show All</option>
-                  {STATUS_LABELS.map((label, idx) => (
-                    <option key={idx} value={idx}>{label}</option>
-                  ))}
+                  <option value="all">All Status</option>
+                  <StatusOptions />
                 </select>
               </div>
             </div>
@@ -659,12 +713,12 @@ export default function AdminPanel() {
                 <span>{selectedOrders.length} selected</span>
               </label>
               <select value={bulkStatus} onChange={(e) => setBulkStatus(Number(e.target.value))}>
-                {STATUS_LABELS.map((label, idx) => (
-                  <option key={idx} value={idx}>Change to: {label}</option>
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status.value} value={status.value}>To: {status.shortLabel}</option>
                 ))}
               </select>
-              <button type="button" className="primary-soft-btn" onClick={handleBulkUpdate} disabled={selectedOrders.length === 0 || loading}>Update Status</button>
-              <button type="button" className="danger-soft-btn" onClick={handleBulkDelete} disabled={selectedOrders.length === 0 || loading}>Delete Selected</button>
+              <button type="button" className="primary-soft-btn" onClick={handleBulkUpdate} disabled={selectedOrders.length === 0 || loading}>Update</button>
+              <button type="button" className="danger-soft-btn" onClick={handleBulkDelete} disabled={selectedOrders.length === 0 || loading}>Delete</button>
             </div>
 
             {loadingOrders ? (
@@ -672,61 +726,94 @@ export default function AdminPanel() {
             ) : displayedOrders.length === 0 ? (
               <div className="empty-state">No orders found.</div>
             ) : (
-              <div className="table-wrap">
-                <table className="orders-table">
-                  <thead>
-                    <tr>
-                      <th className="check-col"></th>
-                      <th onClick={() => handleSort("id")}>Code{sortMark("id")}</th>
-                      <th onClick={() => handleSort("_realName")}>Customer{sortMark("_realName")}</th>
-                      <th onClick={() => handleSort("status")}>Status{sortMark("status")}</th>
-                      <th onClick={() => handleSort("amountUSD")}>Price{sortMark("amountUSD")}</th>
-                      <th onClick={() => handleSort("date")}>Date{sortMark("date")}</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedOrders.map((order) => {
-                      const status = Number(order.status || 0);
-                      return (
-                        <tr key={order.id} className={selectedOrders.includes(order.id) ? "selected-row" : ""}>
-                          <td>
-                            <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOne(order.id)} />
-                          </td>
-                          <td>
-                            <strong className="order-code">{order.id}</strong>
-                          </td>
-                          <td>
-                            <div className="customer-cell">
-                              <strong>{order.title}. {order._realName || "No name"}</strong>
-                              <span>{order._realPhone || "No phone"}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <select className={`status-select ${STATUS_TONE[status] || "neutral"}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
-                              {STATUS_LABELS.map((label, idx) => (
-                                <option key={idx} value={idx}>{label}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            <strong>{formatUSD(order.amountUSD)}</strong>
-                            <span className="sub-money">{formatIQD(order.amountIQD)}</span>
-                          </td>
-                          <td>{order.date}</td>
-                          <td>
-                            <div className="row-actions">
-                              <button type="button" className="wa-btn" onClick={() => sendWhatsApp(order)}>WA</button>
-                              <button type="button" className="edit-btn" onClick={() => handleEdit(order)}>Edit</button>
-                              <button type="button" className="delete-btn" onClick={() => handleDelete(order.id)}>Del</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="mobile-orders-list">
+                  {displayedOrders.map((order) => {
+                    const status = normalizeActiveStatus(order.status);
+                    const option = getStatusOption(status);
+                    return (
+                      <article key={order.id} className={`mobile-order-row ${selectedOrders.includes(order.id) ? "selected" : ""}`}>
+                        <label className="mobile-select-box" aria-label={`Select ${order.id}`}>
+                          <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOne(order.id)} />
+                        </label>
+
+                        <button type="button" className="mobile-main-info" onClick={() => handleEdit(order)}>
+                          <span className="mobile-code">{order.id}</span>
+                          <strong>{order.title}. {order._realName || "No name"}</strong>
+                          <small dir="ltr">{order._realPhone || "No phone"} · {formatUSD(order.amountUSD)} · {order.date || "-"}</small>
+                        </button>
+
+                        <select className={`status-select mobile-status ${option.tone}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
+                          {STATUS_OPTIONS.map((item) => (
+                            <option key={item.value} value={item.value}>{item.shortLabel}</option>
+                          ))}
+                        </select>
+
+                        <div className="mobile-row-actions">
+                          <button type="button" className="wa-btn" onClick={() => sendWhatsApp(order)}>WA</button>
+                          <button type="button" className="edit-btn" onClick={() => handleEdit(order)}>Edit</button>
+                          <button type="button" className="delete-btn" onClick={() => handleDelete(order.id)}>Del</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className="table-wrap">
+                  <table className="orders-table">
+                    <thead>
+                      <tr>
+                        <th className="check-col"></th>
+                        <th onClick={() => handleSort("id")}>Code{sortMark("id")}</th>
+                        <th onClick={() => handleSort("_realName")}>Customer{sortMark("_realName")}</th>
+                        <th onClick={() => handleSort("status")}>Status{sortMark("status")}</th>
+                        <th onClick={() => handleSort("amountUSD")}>Price{sortMark("amountUSD")}</th>
+                        <th onClick={() => handleSort("date")}>Date{sortMark("date")}</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedOrders.map((order) => {
+                        const status = normalizeActiveStatus(order.status);
+                        const option = getStatusOption(status);
+                        return (
+                          <tr key={order.id} className={selectedOrders.includes(order.id) ? "selected-row" : ""}>
+                            <td>
+                              <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOne(order.id)} />
+                            </td>
+                            <td>
+                              <strong className="order-code">{order.id}</strong>
+                            </td>
+                            <td>
+                              <div className="customer-cell">
+                                <strong>{order.title}. {order._realName || "No name"}</strong>
+                                <span>{order._realPhone || "No phone"}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <select className={`status-select ${option.tone}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
+                                <StatusOptions />
+                              </select>
+                            </td>
+                            <td>
+                              <strong>{formatUSD(order.amountUSD)}</strong>
+                              <span className="sub-money">{formatIQD(order.amountIQD)}</span>
+                            </td>
+                            <td>{order.date}</td>
+                            <td>
+                              <div className="row-actions">
+                                <button type="button" className="wa-btn" onClick={() => sendWhatsApp(order)}>WA</button>
+                                <button type="button" className="edit-btn" onClick={() => handleEdit(order)}>Edit</button>
+                                <button type="button" className="delete-btn" onClick={() => handleDelete(order.id)}>Del</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </section>
@@ -739,17 +826,22 @@ function AdminStyles() {
   return (
     <style>{`
       :root {
-        --admin-bg: #eef3f7;
-        --admin-card: rgba(255, 255, 255, 0.92);
-        --admin-text: #0f172a;
-        --admin-muted: #64748b;
-        --admin-border: #e2e8f0;
-        --admin-primary: #059669;
-        --admin-primary-dark: #047857;
-        --admin-danger: #ef4444;
-        --admin-shadow: 0 24px 70px rgba(15, 23, 42, 0.10);
-        --admin-radius: 24px;
+        --admin-bg: #06110e;
+        --admin-card: #0d1a16;
+        --admin-card-strong: #10241e;
+        --admin-soft: #0a1713;
+        --admin-text: #edfdf7;
+        --admin-muted: #8fa99f;
+        --admin-border: rgba(140, 255, 216, 0.15);
+        --admin-primary: #22c55e;
+        --admin-primary-dark: #16a34a;
+        --admin-danger: #fb7185;
+        --admin-warning: #fbbf24;
+        --admin-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+        --admin-radius: 18px;
       }
+
+      * { box-sizing: border-box; }
 
       .admin-login-page,
       .admin-page {
@@ -757,303 +849,566 @@ function AdminStyles() {
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--admin-text);
         background:
-          radial-gradient(circle at top left, rgba(5, 150, 105, 0.18), transparent 34%),
-          radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 32%),
-          linear-gradient(135deg, #f8fafc 0%, #eef3f7 100%);
+          radial-gradient(circle at 8% -8%, rgba(34, 197, 94, 0.18), transparent 34%),
+          radial-gradient(circle at 92% 0%, rgba(20, 184, 166, 0.14), transparent 32%),
+          linear-gradient(180deg, #071410 0%, var(--admin-bg) 52%, #030806 100%);
       }
 
-      .admin-login-page {
+      .admin-page { padding: 18px; }
+
+      .admin-shell {
+        width: min(1260px, 100%);
+        margin: 0 auto;
         display: grid;
-        place-items: center;
-        padding: 24px;
+        gap: 14px;
       }
-
-      .login-card {
-        width: min(420px, 100%);
-        background: var(--admin-card);
-        border: 1px solid rgba(255, 255, 255, 0.9);
-        border-radius: 32px;
-        padding: 36px;
-        box-shadow: var(--admin-shadow);
-        backdrop-filter: blur(18px);
-        text-align: center;
-      }
-
-      .login-badge {
-        width: 76px;
-        height: 76px;
-        margin: 0 auto 18px;
-        border-radius: 24px;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(135deg, var(--admin-primary), #10b981);
-        color: white;
-        font-size: 28px;
-        font-weight: 950;
-        letter-spacing: -1px;
-        box-shadow: 0 14px 30px rgba(5, 150, 105, 0.26);
-      }
-
-      .login-card h1,
-      .admin-header h1,
-      .panel-title-row h2 {
-        margin: 0;
-        letter-spacing: -0.04em;
-      }
-
-      .login-card p,
-      .admin-header p {
-        margin: 10px 0 22px;
-        color: var(--admin-muted);
-        line-height: 1.6;
-      }
-
-      .login-card input,
-      .order-form input,
-      .order-form select,
-      .filter-row input,
-      .filter-row select,
-      .bulk-bar select {
-        width: 100%;
-        border: 1px solid var(--admin-border);
-        background: white;
-        border-radius: 14px;
-        padding: 13px 14px;
-        color: var(--admin-text);
-        font-size: 14px;
-        outline: none;
-        transition: 0.2s ease;
-      }
-
-      .login-card input:focus,
-      .order-form input:focus,
-      .order-form select:focus,
-      .filter-row input:focus,
-      .filter-row select:focus,
-      .bulk-bar select:focus {
-        border-color: rgba(5, 150, 105, 0.55);
-        box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.12);
-      }
-
-      .login-card button,
-      .primary-btn {
-        width: 100%;
-        border: none;
-        border-radius: 16px;
-        padding: 14px 18px;
-        color: white;
-        background: linear-gradient(135deg, var(--admin-primary), #10b981);
-        font-weight: 900;
-        cursor: pointer;
-        box-shadow: 0 12px 24px rgba(5, 150, 105, 0.22);
-        transition: 0.2s ease;
-      }
-
-      button:hover,
-      .secondary-link:hover { transform: translateY(-1px); }
-      button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-
-      .admin-page { padding: 28px 18px 56px; }
-      .admin-shell { max-width: 1220px; margin: 0 auto; display: grid; gap: 20px; }
 
       .admin-header,
       .panel-card,
-      .stat-card {
-        background: var(--admin-card);
-        border: 1px solid rgba(255, 255, 255, 0.9);
+      .stat-card,
+      .login-card {
+        background: linear-gradient(180deg, rgba(16, 36, 30, 0.96), rgba(9, 21, 18, 0.96));
+        border: 1px solid var(--admin-border);
         box-shadow: var(--admin-shadow);
-        backdrop-filter: blur(18px);
       }
 
       .admin-header {
-        border-radius: 32px;
-        padding: 28px;
+        min-height: 84px;
+        border-radius: var(--admin-radius);
+        padding: 18px;
         display: flex;
+        align-items: center;
         justify-content: space-between;
-        gap: 18px;
-        align-items: center;
+        gap: 14px;
       }
 
-      .admin-header h1 { font-size: clamp(2rem, 4vw, 3.4rem); }
-      .eyebrow { color: var(--admin-primary); text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; font-weight: 950; }
+      .admin-heading h1,
+      .panel-title-row h2 {
+        margin: 2px 0 0;
+        line-height: 1;
+      }
 
-      .header-actions,
-      .form-actions,
-      .filter-row,
-      .row-actions,
-      .bulk-bar {
+      .admin-heading h1 { font-size: 2rem; letter-spacing: -0.05em; }
+      .admin-heading p { margin: 8px 0 0; color: var(--admin-muted); font-size: 13px; font-weight: 700; }
+
+      .eyebrow {
+        color: var(--admin-primary);
+        font-size: 11px;
+        font-weight: 950;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .header-actions {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         flex-wrap: wrap;
+        justify-content: flex-end;
       }
 
-      .secondary-link,
-      .ghost-btn,
-      .danger-soft-btn,
-      .primary-soft-btn,
-      .wa-btn,
-      .edit-btn,
-      .delete-btn {
-        border: none;
-        border-radius: 13px;
-        padding: 10px 14px;
+      button,
+      .secondary-link {
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 14px;
+        min-height: 40px;
         font-size: 13px;
         font-weight: 900;
         cursor: pointer;
         text-decoration: none;
-        transition: 0.2s ease;
-        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
       }
 
-      .secondary-link,
-      .ghost-btn {
-        color: var(--admin-text);
-        background: #f8fafc;
-        border: 1px solid var(--admin-border);
-      }
+      button:active,
+      .secondary-link:active { transform: scale(0.98); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-      .primary-soft-btn { background: #d1fae5; color: #047857; }
-      .danger-soft-btn { background: #fee2e2; color: #b91c1c; }
-      .wa-btn { background: #dcfce7; color: #15803d; }
-      .edit-btn { background: #dbeafe; color: #1d4ed8; }
-      .delete-btn { background: #fee2e2; color: #dc2626; }
+      .primary-btn { background: var(--admin-primary); color: white; }
+      .primary-btn:hover { background: var(--admin-primary-dark); }
+      .ghost-btn, .secondary-link { background: rgba(148, 163, 184, 0.12); color: #d7fff1; border: 1px solid rgba(148, 163, 184, 0.15); }
+      .primary-soft-btn { background: rgba(34, 197, 94, 0.16); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.22); }
+      .danger-soft-btn { background: rgba(244, 63, 94, 0.14); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.22); }
+      .wa-btn { background: rgba(34, 197, 94, 0.16); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.22); }
+      .edit-btn { background: rgba(59, 130, 246, 0.16); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.22); }
+      .delete-btn { background: rgba(244, 63, 94, 0.14); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.22); }
 
       .notice {
-        border-radius: 16px;
-        padding: 13px 16px;
-        font-weight: 800;
+        border-radius: 14px;
+        padding: 12px 14px;
+        font-size: 13px;
+        font-weight: 850;
         border: 1px solid transparent;
       }
-      .notice.success { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
-      .notice.error { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
-      .notice.info { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+      .notice.success { color: #a7f3d0; background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.26); }
+      .notice.error { color: #fecdd3; background: rgba(244, 63, 94, 0.12); border-color: rgba(244, 63, 94, 0.28); }
+      .notice.info { color: #bfdbfe; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.26); }
 
       .stats-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 14px;
+        gap: 10px;
       }
 
       .stat-card {
-        border-radius: 22px;
-        padding: 20px;
+        border-radius: 16px;
+        padding: 14px 16px;
+        display: grid;
+        gap: 4px;
       }
-      .stat-card span { display: block; color: var(--admin-muted); font-weight: 800; font-size: 13px; margin-bottom: 8px; }
-      .stat-card strong { display: block; font-size: 28px; letter-spacing: -0.04em; }
+      .stat-card span { color: var(--admin-muted); font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.09em; }
+      .stat-card strong { font-size: 24px; letter-spacing: -0.04em; }
 
       .panel-card {
         border-radius: var(--admin-radius);
-        padding: 24px;
+        padding: 16px;
       }
 
       .panel-title-row {
         display: flex;
+        align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        align-items: start;
-        margin-bottom: 20px;
+        gap: 12px;
+        margin-bottom: 12px;
       }
-      .panel-title-row.compact { align-items: center; }
-      .panel-title-row h2 { font-size: 1.5rem; }
+      .panel-title-row h2 { font-size: 1.35rem; letter-spacing: -0.04em; }
       .panel-title-row small { color: var(--admin-muted); font-size: 0.9rem; }
-      .edit-chip { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 999px; font-weight: 900; font-size: 12px; }
 
-      .order-form { display: grid; gap: 15px; }
-      .form-grid { display: grid; gap: 15px; }
-      .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .order-form label { display: grid; gap: 7px; color: var(--admin-muted); font-size: 13px; font-weight: 900; }
-      .order-form label span { display: flex; justify-content: space-between; align-items: center; }
-      .label-with-select select { width: auto; padding: 4px 8px; border-radius: 999px; font-size: 11px; }
-      .full-row { grid-column: 1 / -1; }
-      .form-actions { justify-content: flex-end; border-top: 1px solid var(--admin-border); padding-top: 15px; }
-      .form-actions .primary-btn { width: auto; min-width: 170px; }
+      .edit-chip {
+        background: rgba(34, 197, 94, 0.14);
+        color: #bbf7d0;
+        border: 1px solid rgba(34, 197, 94, 0.28);
+        border-radius: 999px;
+        padding: 8px 11px;
+        font-size: 12px;
+        font-weight: 950;
+      }
 
-      .filter-row { justify-content: flex-end; }
-      .filter-row input { width: 250px; }
-      .filter-row select { width: 220px; }
+      .quick-order-form { display: grid; gap: 12px; }
+
+      .form-strip {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 8px;
+        align-items: end;
+      }
+
+      .form-strip label {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+        color: var(--admin-muted);
+        font-size: 11px;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .field-code { grid-column: span 2; }
+      .field-title { grid-column: span 1; }
+      .field-lang { grid-column: span 2; }
+      .field-name { grid-column: span 3; }
+      .field-phone { grid-column: span 3; }
+      .field-items { grid-column: span 1; }
+      .field-date { grid-column: span 2; }
+      .field-usd { grid-column: span 2; }
+      .field-iqd { grid-column: span 2; }
+      .field-ship { grid-column: span 2; }
+      .field-status { grid-column: span 4; }
+
+      input,
+      select {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid var(--admin-border);
+        background: #08130f;
+        color: var(--admin-text);
+        border-radius: 12px;
+        min-height: 42px;
+        padding: 10px 11px;
+        outline: none;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      select {
+        appearance: none;
+        -webkit-appearance: none;
+        padding-right: 34px;
+        background-color: #08130f;
+        background-image: linear-gradient(45deg, transparent 50%, #7dd3fc 50%), linear-gradient(135deg, #7dd3fc 50%, transparent 50%), linear-gradient(180deg, rgba(34, 197, 94, 0.10), rgba(20, 184, 166, 0.04));
+        background-position: calc(100% - 18px) calc(50% + 1px), calc(100% - 13px) calc(50% + 1px), 0 0;
+        background-size: 5px 5px, 5px 5px, 100% 100%;
+        background-repeat: no-repeat;
+        cursor: pointer;
+      }
+
+      select option {
+        background: #0b1713;
+        color: #edfdf7;
+      }
+
+      input::placeholder { color: rgba(237, 253, 247, 0.42); }
+
+      input:focus,
+      select:focus {
+        border-color: rgba(52, 211, 153, 0.66);
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.13);
+      }
+
+      .label-with-select {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .label-with-select select {
+        width: 70px;
+        min-height: 26px;
+        padding: 3px 6px;
+        border-radius: 8px;
+        font-size: 11px;
+      }
+
+      .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .form-actions button { min-width: 130px; }
+
+      .orders-title-row { align-items: end; }
+      .filter-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 270px) minmax(160px, 240px);
+        gap: 8px;
+      }
 
       .bulk-bar {
-        background: #f8fafc;
-        border: 1px dashed var(--admin-border);
-        border-radius: 18px;
-        padding: 12px;
-        margin-bottom: 16px;
-        opacity: 0.72;
+        display: grid;
+        grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1.1fr) auto auto;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        background: var(--admin-soft);
+        border: 1px solid var(--admin-border);
       }
-      .bulk-bar.active { border-style: solid; opacity: 1; background: #f0fdf4; }
-      .select-all-inline { display: inline-flex; align-items: center; gap: 8px; font-weight: 900; color: var(--admin-primary); }
+      .bulk-bar.active { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.30); }
+      .select-all-inline {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13px;
+        color: var(--admin-muted);
+        font-weight: 950;
+      }
       .select-all-inline input,
-      .orders-table input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--admin-primary); cursor: pointer; }
-      .bulk-bar select { max-width: 260px; }
-
-      .table-wrap { overflow-x: auto; border-radius: 18px; border: 1px solid var(--admin-border); }
-      .orders-table { width: 100%; min-width: 930px; border-collapse: collapse; background: white; }
-      .orders-table th {
-        color: #64748b;
-        background: #f8fafc;
-        text-align: left;
-        font-size: 12px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        padding: 14px;
+      .orders-table input[type="checkbox"],
+      .mobile-select-box input {
+        width: 18px;
+        height: 18px;
+        min-height: 18px;
+        accent-color: var(--admin-primary);
         cursor: pointer;
+      }
+
+      .empty-state {
+        border-radius: 14px;
+        background: var(--admin-soft);
+        border: 1px dashed var(--admin-border);
+        color: var(--admin-muted);
+        padding: 24px;
+        text-align: center;
+        font-weight: 900;
+      }
+
+      .table-wrap {
+        width: 100%;
+        overflow: auto;
+        border: 1px solid var(--admin-border);
+        border-radius: 16px;
+        background: #08130f;
+      }
+      .orders-table {
+        width: 100%;
+        min-width: 900px;
+        border-collapse: collapse;
+      }
+      .orders-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #0f211c;
+        color: #9fb9b0;
+        font-size: 11px;
+        font-weight: 950;
+        letter-spacing: 0.08em;
+        text-align: left;
+        text-transform: uppercase;
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--admin-border);
+        cursor: pointer;
+        white-space: nowrap;
       }
       .orders-table th:last-child { cursor: default; text-align: right; }
-      .orders-table td { padding: 14px; border-top: 1px solid #eef2f7; vertical-align: middle; }
-      .orders-table tr.selected-row { background: #f0fdf4; }
-      .order-code { color: #047857; letter-spacing: 0.03em; }
-      .customer-cell { display: grid; gap: 4px; }
+      .orders-table td {
+        padding: 10px 12px;
+        border-top: 1px solid rgba(140, 255, 216, 0.10);
+        vertical-align: middle;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .orders-table tr:hover { background: rgba(34, 197, 94, 0.06); }
+      .orders-table tr.selected-row { background: rgba(34, 197, 94, 0.12); }
+      .order-code { color: var(--admin-primary); font-size: 15px; letter-spacing: 0.02em; }
+      .customer-cell { display: grid; gap: 2px; }
       .customer-cell span,
-      .sub-money { color: var(--admin-muted); font-size: 12px; display: block; margin-top: 4px; }
+      .sub-money { display: block; color: var(--admin-muted); font-size: 12px; font-weight: 800; margin-top: 2px; }
 
       .status-select {
-        border: none;
-        border-radius: 999px;
-        padding: 7px 12px;
+        min-height: 38px;
+        max-width: 230px;
         font-size: 12px;
-        font-weight: 900;
-        outline: none;
-        cursor: pointer;
-        max-width: 190px;
+        border-width: 1px;
       }
-      .status-select.neutral { background: #f1f5f9; color: #475569; }
-      .status-select.blue { background: #dbeafe; color: #1d4ed8; }
-      .status-select.amber { background: #fef3c7; color: #b45309; }
-      .status-select.purple { background: #f3e8ff; color: #7e22ce; }
-      .status-select.cyan { background: #cffafe; color: #0e7490; }
-      .status-select.slate { background: #e2e8f0; color: #334155; }
-      .status-select.orange { background: #ffedd5; color: #c2410c; }
-      .status-select.indigo { background: #e0e7ff; color: #4338ca; }
-      .status-select.green { background: #dcfce7; color: #15803d; }
-      .status-select.emerald { background: #d1fae5; color: #047857; }
+      .status-select.neutral { background-color: rgba(148, 163, 184, 0.14); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.24); }
+      .status-select.amber { background-color: rgba(245, 158, 11, 0.16); color: #fcd34d; border-color: rgba(245, 158, 11, 0.34); }
+      .status-select.purple { background-color: rgba(168, 85, 247, 0.16); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.34); }
+      .status-select.cyan { background-color: rgba(6, 182, 212, 0.16); color: #67e8f9; border-color: rgba(6, 182, 212, 0.34); }
+      .status-select.orange { background-color: rgba(249, 115, 22, 0.16); color: #fdba74; border-color: rgba(249, 115, 22, 0.34); }
+      .status-select.indigo { background-color: rgba(99, 102, 241, 0.17); color: #c7d2fe; border-color: rgba(99, 102, 241, 0.34); }
+      .status-select.green { background-color: rgba(34, 197, 94, 0.16); color: #86efac; border-color: rgba(34, 197, 94, 0.34); }
+      .status-select.emerald { background-color: rgba(16, 185, 129, 0.18); color: #a7f3d0; border-color: rgba(16, 185, 129, 0.36); }
 
-      .row-actions { justify-content: flex-end; flex-wrap: nowrap; }
-      .empty-state { text-align: center; color: var(--admin-muted); padding: 42px 20px; font-weight: 900; }
+      .filter-row select,
+      .bulk-bar select,
+      .field-status select,
+      .status-select,
+      .mobile-status {
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 20px rgba(0, 0, 0, 0.12);
+      }
 
-      @media (max-width: 900px) {
-        .admin-header,
-        .panel-title-row.compact { flex-direction: column; align-items: stretch; }
-        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .form-grid.two,
-        .form-grid.three { grid-template-columns: 1fr; }
-        .filter-row { justify-content: stretch; }
+      .status-select:hover,
+      .filter-row select:hover,
+      .bulk-bar select:hover,
+      .field-status select:hover {
+        border-color: rgba(125, 211, 252, 0.44);
+      }
+
+      .row-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .row-actions button { padding: 8px 10px; min-height: 34px; font-size: 12px; }
+
+      .mobile-orders-list { display: none; }
+
+      .login-card {
+        width: min(420px, calc(100% - 28px));
+        margin: 14vh auto 0;
+        border-radius: 22px;
+        padding: 28px;
+        display: grid;
+        gap: 14px;
+        text-align: center;
+      }
+      .login-badge {
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #16a34a, #14b8a6);
+        color: white;
+        display: grid;
+        place-items: center;
+        margin: 0 auto;
+        font-weight: 950;
+        font-size: 20px;
+      }
+      .login-card h1 { margin: 0; font-size: 2rem; letter-spacing: -0.06em; }
+      .login-card p { margin: 0; color: var(--admin-muted); font-weight: 800; }
+      .login-card button { background: var(--admin-primary); color: white; }
+
+      @media (max-width: 920px) {
+        .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .admin-header { align-items: stretch; }
+        .admin-heading p { display: none; }
+        .header-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 320px; }
+        .header-actions > * { width: 100%; }
+        .orders-title-row { align-items: stretch; flex-direction: column; }
+        .filter-row { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media (max-width: 760px) {
+        .admin-page { padding: 8px 6px 22px; }
+        .admin-shell { gap: 8px; }
+        .admin-header {
+          min-height: 0;
+          padding: 10px;
+          border-radius: 14px;
+          align-items: center;
+        }
+        .admin-heading h1 { font-size: 1.25rem; }
+        .eyebrow { font-size: 9px; letter-spacing: 0.12em; }
+        .header-actions { min-width: 0; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .header-actions > * { min-height: 34px; padding: 7px 5px; font-size: 10px; border-radius: 10px; }
+
+        .stats-grid { display: none; }
+        .panel-card { padding: 9px; border-radius: 14px; }
+        .panel-title-row { margin-bottom: 7px; }
+        .panel-title-row h2 { font-size: 1.02rem; }
+        .edit-chip { padding: 5px 7px; font-size: 10px; }
+
+        .quick-order-form { gap: 7px; }
+        .form-strip {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 6px;
+        }
+        .form-strip label { gap: 3px; font-size: 9px; letter-spacing: 0.04em; }
+        .field-code { grid-column: span 2; }
+        .field-title { grid-column: span 1; }
+        .field-lang { grid-column: span 1; }
+        .field-name { grid-column: span 2; }
+        .field-phone { grid-column: span 2; }
+        .field-items { grid-column: span 1; }
+        .field-date { grid-column: span 1; }
+        .field-usd { grid-column: span 1; }
+        .field-iqd { grid-column: span 1; }
+        .field-ship { grid-column: span 2; }
+        .field-status { grid-column: span 2; }
+
+        input,
+        select {
+          min-height: 36px;
+          border-radius: 9px;
+          padding: 7px 7px;
+          font-size: 12px;
+          font-weight: 850;
+        }
+        .label-with-select { gap: 3px; }
+        .label-with-select select { width: 52px; min-height: 20px; font-size: 9px; padding: 1px 3px; border-radius: 6px; }
+        .form-actions { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 6px; }
+        .form-actions button { width: 100%; min-width: 0; min-height: 37px; padding: 8px 6px; font-size: 12px; border-radius: 10px; }
+
+        .orders-title-row { gap: 7px; }
+        .filter-row { grid-template-columns: 1fr 1fr; gap: 6px; }
         .filter-row input,
-        .filter-row select { width: 100%; }
-        .header-actions > *,
-        .bulk-bar > *,
-        .form-actions > * { width: 100%; justify-content: center; text-align: center; }
-        .form-actions .primary-btn { width: 100%; }
+        .filter-row select { min-height: 36px; }
+
+        .bulk-bar {
+          grid-template-columns: minmax(94px, 0.8fr) minmax(118px, 1.1fr) 62px 58px;
+          gap: 5px;
+          padding: 6px;
+          margin-bottom: 6px;
+          border-radius: 11px;
+        }
+        .bulk-bar select { min-height: 34px; font-size: 11px; }
+        .bulk-bar button { min-height: 34px; padding: 7px 3px; font-size: 10px; border-radius: 9px; }
+        .select-all-inline { gap: 5px; font-size: 11px; }
+        .select-all-inline input { width: 16px; height: 16px; min-height: 16px; }
+
+        .table-wrap { display: none; }
+        .mobile-orders-list {
+          display: grid;
+          border: 1px solid var(--admin-border);
+          border-radius: 12px;
+          overflow: hidden;
+          background: #08130f;
+        }
+        .mobile-order-row {
+          display: grid;
+          grid-template-columns: 24px minmax(0, 1fr) 104px;
+          grid-template-areas:
+            "check main status"
+            "check main actions";
+          align-items: center;
+          gap: 5px 7px;
+          padding: 7px;
+          border-bottom: 1px solid rgba(140, 255, 216, 0.10);
+          background: #08130f;
+        }
+        .mobile-order-row:last-child { border-bottom: 0; }
+        .mobile-order-row.selected { background: rgba(34, 197, 94, 0.12); }
+        .mobile-select-box { grid-area: check; display: grid; place-items: center; }
+        .mobile-select-box input { width: 17px; height: 17px; min-height: 17px; }
+        .mobile-main-info {
+          grid-area: main;
+          min-width: 0;
+          min-height: 0;
+          padding: 0;
+          border-radius: 0;
+          background: transparent;
+          color: var(--admin-text);
+          display: grid;
+          justify-content: stretch;
+          text-align: left;
+          gap: 1px;
+        }
+        .mobile-main-info:hover { background: transparent; }
+        .mobile-code { color: var(--admin-primary); font-size: 13px; font-weight: 950; letter-spacing: 0.02em; }
+        .mobile-main-info strong {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 12px;
+          line-height: 1.1;
+        }
+        .mobile-main-info small {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: var(--admin-muted);
+          font-size: 10.5px;
+          font-weight: 850;
+        }
+        .mobile-status {
+          grid-area: status;
+          width: 100%;
+          max-width: 104px;
+          min-height: 34px;
+          padding: 6px 5px;
+          font-size: 10.5px;
+          border-radius: 9px;
+        }
+        .mobile-row-actions {
+          grid-area: actions;
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 3px;
+        }
+        .mobile-row-actions button {
+          min-height: 28px;
+          padding: 4px 2px;
+          border-radius: 8px;
+          font-size: 9.5px;
+        }
       }
 
-      @media (max-width: 560px) {
-        .admin-page { padding: 14px 10px 34px; }
-        .admin-header,
-        .panel-card { border-radius: 20px; padding: 18px; }
-        .stats-grid { grid-template-columns: 1fr; }
-        .stat-card strong { font-size: 24px; }
-        .panel-title-row { flex-direction: column; }
+      @media (max-width: 430px) {
+        .admin-page { padding-left: 5px; padding-right: 5px; }
+        .panel-card { padding: 7px; }
+        .form-strip { gap: 5px; }
+        input, select { font-size: 11.5px; padding-left: 6px; padding-right: 6px; }
+        .bulk-bar { grid-template-columns: 1fr 1fr; }
+        .bulk-bar .primary-soft-btn,
+        .bulk-bar .danger-soft-btn { min-height: 32px; }
+        .mobile-order-row {
+          grid-template-columns: 22px minmax(0, 1fr) 92px;
+          gap: 4px 5px;
+          padding: 6px;
+        }
+        .mobile-status { max-width: 92px; font-size: 10px; }
+        .mobile-code { font-size: 12.5px; }
+        .mobile-main-info strong { font-size: 11.5px; }
+        .mobile-main-info small { font-size: 10px; }
       }
     `}</style>
   );

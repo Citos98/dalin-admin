@@ -392,12 +392,45 @@ export default function OrderTracking() {
         </button>
       </div>
 
-      <div className="header-section">
-        <h1 className="brand-title">{t.brand}</h1>
-        <p className="brand-subtitle">{t.subtitle}</p>
-      </div>
+      <div className="tracking-layout">
+        <section className="tracking-hero command-hero">
+          <div className="hero-orbit" aria-hidden="true">
+            <div className="orbit-ring ring-one"></div>
+            <div className="orbit-ring ring-two"></div>
+            <div className="orbit-node node-dubai">DXB</div>
+            <div className="orbit-node node-erbil">EBL</div>
+            <div className="orbit-plane">✈</div>
+          </div>
 
-      <div className="glass-card">
+          <div className="hero-copy">
+            <div className="hero-logo">DS</div>
+            <span className="hero-kicker">UAE → Kurdistan · Order Command</span>
+            <h1 className="brand-title">{t.brand}</h1>
+            <p className="brand-subtitle">{t.subtitle}</p>
+            <p className="hero-description">A private tracking room for your shopping journey: purchase, Dubai handling, air freight and final delivery in one clean view.</p>
+            <div className="route-strip" aria-label="Delivery route">
+              <span>Shein</span>
+              <b></b>
+              <span>Dubai</span>
+              <b></b>
+              <span>Kurdistan</span>
+            </div>
+          </div>
+
+          <div className="hero-metrics" aria-hidden="true">
+            <div><strong>09</strong><span>tracking stages</span></div>
+            <div><strong>DS</strong><span>smart order code</span></div>
+            <div><strong>WA</strong><span>support ready</span></div>
+          </div>
+        </section>
+
+        <section className="tracking-panel terminal-panel">
+          <div className="glass-card terminal-card">
+            <div className="terminal-topline">
+              <span className="terminal-dot"></span>
+              <span>Enter your Dalin code</span>
+              <em>Live lookup</em>
+            </div>
         
         <div className="search-container">
           <div className="search-input-wrapper" dir="ltr">
@@ -620,6 +653,18 @@ export default function OrderTracking() {
             </div>
           </div>
         )}
+
+            {!orderData && !trackError && (
+              <div className="empty-tracking-hint">
+                <div className="hint-map" aria-hidden="true">
+                  <span>01</span><i></i><span>05</span><i></i><span>09</span>
+                </div>
+                <strong>Enter your order number</strong>
+                <span>You can write 215 or DS215. The system will find the same order.</span>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );
