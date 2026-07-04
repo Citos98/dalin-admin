@@ -1,197 +1,320 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { doc, setDoc, collection, getDocs, deleteDoc, updateDoc } from "firebase/firestore"; 
-import { db } from "../../firebase"; 
+import Link from "next/link";
+import React, { useEffect, useMemo, useState } from "react";
+import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { db } from "../../firebase";
 
-export default function AdminPanel() {
-  // --- ADMIN AUTH ---
-  const [isAuth, setIsAuth] = useState(false);
-  const [passInput, setPassInput] = useState("");
+type SortDirection = "asc" | "desc";
 
-  const [loading, setLoading] = useState(false);
-  const [orders, setOrders] = useState<any[]>([]); 
-  const [loadingOrders, setLoadingOrders] = useState(true);
+type Order = {
+  id: string;
+  title?: "Mr" | "Miss" | string;
+  customerLang?: "ku" | "ar" | string;
+  nameFirstLetter?: string;
+  nameLastLetter?: string;
+  phoneNetwork?: string;
+  phoneFirst?: string;
+  phoneLast?: string;
+  items?: number;
+  date?: string;
+  amountUSD?: number;
+  amountIQD?: number;
+  shippingIQD?: number;
+  status?: number;
+  _realName?: string;
+  _realPhone?: string;
+};
 
-  // --- TABLO: FILTRELEME, ARAMA, SIRALAMA VE TOPLU ISLEM STATELERI ---
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: "asc" | "desc" }>({ key: "id", direction: "desc" });
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [bulkStatus, setBulkStatus] = useState<number>(0);
+type FormData = {
+  orderCode: string;
+  title: string;
+  customerLang: string;
+  fullName: string;
+  fullPhone: string;
+  items: number;
+  date: string;
+  amountUSD: number;
+  amountIQD: number;
+  shippingIQD: number;
+  status: number;
+};
 
-  // --- CANLI KUR HESAPLAYICI (USD -> IQD) ---
-  const [exchangeRate, setExchangeRate] = useState<number>(1200); 
+const ADMIN_PASSWORD = "dalin1998";
 
-  // --- DINAR SÜRÜCÜSÜ KONTROLÜ (Kilitlenmeyi Önlemek İçin) ---
-  const [isIqdDriving, setIsIqdDriving] = useState(false);
+const STATUS_LABELS = [
+  "0 - Order Placed",
+  "1 - Order Purchased",
+  "2 - Preparing by Shein",
+  "3 - Shipped to Dubai",
+  "4 - Arrived in Dubai",
+  "5 - Waiting in Dubai",
+  "6 - On the way to Kurdistan",
+  "7 - Received & Packing",
+  "8 - Out for Delivery",
+  "9 - Delivered",
+];
 
-  // --- OTOMATIK TARIH ---
-  const getTodayDate = () => {
-    const d = new Date();
-    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-  };
+const STATUS_TONE = [
+  "neutral",
+  "blue",
+  "amber",
+  "purple",
+  "cyan",
+  "slate",
+  "orange",
+  "indigo",
+  "green",
+  "emerald",
+];
 
-  // --- FORM DATA ---
-  const [formData, setFormData] = useState({
+function getTodayDate() {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
+
+function makeEmptyForm(): FormData {
+  return {
     orderCode: "",
-    title: "Miss", 
-    customerLang: "ku", 
+    title: "Miss",
+    customerLang: "ku",
     fullName: "",
     fullPhone: "",
     items: 1,
     date: getTodayDate(),
     amountUSD: 0,
     amountIQD: 0,
-    shippingIQD: 5000, 
+    shippingIQD: 5000,
     status: 0,
-  });
+  };
+}
 
-  const [isEditing, setIsEditing] = useState(false);
+function normalizeOrderCode(value: string) {
+  let code = value.trim().toUpperCase().replace(/\s+/g, "");
+  if (/^\d+$/.test(code)) code = `DS${code}`;
+  if (code.startsWith("DS")) {
+    const numbers = code.slice(2).replace(/\D/g, "");
+    code = numbers ? `DS${numbers}` : "DS";
+  }
+  return code;
+}
+
+function formatIQD(value?: number) {
+  return `${Number(value || 0).toLocaleString()} IQD`;
+}
+
+function formatUSD(value?: number) {
+  return `$${Number(value || 0).toLocaleString()}`;
+}
+
+function cleanPhoneForWhatsApp(value?: string) {
+  let phone = String(value || "").replace(/\D/g, "");
+  if (phone.startsWith("0")) phone = phone.substring(1);
+  if (!phone.startsWith("964")) phone = `964${phone}`;
+  return phone;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return fallback;
+}
+
+export default function AdminPanel() {
+  const [isAuth, setIsAuth] = useState(false);
+  const [passInput, setPassInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+  const [notice, setNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Order | "id"; direction: SortDirection }>({ key: "id", direction: "desc" });
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState(0);
+  const [exchangeRate, setExchangeRate] = useState(1200);
+  const [isIqdDriving, setIsIqdDriving] = useState(false);
+  const [formData, setFormData] = useState<FormData>(makeEmptyForm());
+
+  const normalizedCode = normalizeOrderCode(formData.orderCode);
+  const isEditing = useMemo(() => orders.some((order) => order.id === normalizedCode), [orders, normalizedCode]);
 
   useEffect(() => {
     if (localStorage.getItem("adminAuth") === "yes") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsAuth(true);
     }
     fetchOrders();
   }, []);
 
-  // --- KOD KONTROLU (UYARI ICIN) ---
-  useEffect(() => {
-    let code = formData.orderCode.trim().toUpperCase();
-    if (/^\d+$/.test(code)) code = "DS" + code;
-    const exists = orders.some(o => o.id === code);
-    setIsEditing(exists);
-  }, [formData.orderCode, orders]);
+  const displayedOrders = useMemo(() => {
+    let result = [...orders];
 
-  const handleLogin = (e: any) => {
-    e.preventDefault();
-    if (passInput === "dalin1998") {
-      setIsAuth(true);
-      localStorage.setItem("adminAuth", "yes");
-    } else {
-      alert("Yanlis sifre!");
+    if (searchTerm.trim()) {
+      const lowerSearch = searchTerm.trim().toLowerCase();
+      result = result.filter((order) => {
+        return (
+          order.id.toLowerCase().includes(lowerSearch) ||
+          String(order._realName || "").toLowerCase().includes(lowerSearch) ||
+          String(order._realPhone || "").includes(lowerSearch)
+        );
+      });
     }
-  };
 
-  const fetchOrders = async () => {
+    if (filterStatus !== "all") {
+      result = result.filter((order) => Number(order.status || 0) === Number(filterStatus));
+    }
+
+    result.sort((a, b) => {
+      const valA = a[sortConfig.key as keyof Order] ?? "";
+      const valB = b[sortConfig.key as keyof Order] ?? "";
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [orders, searchTerm, filterStatus, sortConfig]);
+
+  const stats = useMemo(() => {
+    const delivered = orders.filter((order) => Number(order.status || 0) === 9).length;
+    const active = orders.length - delivered;
+    const totalUSD = orders.reduce((sum, order) => sum + Number(order.amountUSD || 0), 0);
+    return { total: orders.length, active, delivered, totalUSD };
+  }, [orders]);
+
+  async function fetchOrders() {
     setLoadingOrders(true);
+    setFetchError("");
     try {
       const querySnapshot = await getDocs(collection(db, "orders"));
-      const ordersList: any[] = [];
-      querySnapshot.forEach((doc) => {
-        ordersList.push({ id: doc.id, ...doc.data() });
+      const ordersList: Order[] = [];
+      querySnapshot.forEach((orderDoc) => {
+        ordersList.push({ id: orderDoc.id, ...(orderDoc.data() as Omit<Order, "id">) });
       });
       setOrders(ordersList);
-    } catch (error) {
-      console.error("Hata:", error);
+    } catch (error: unknown) {
+      console.error("Fetch orders error:", error);
+      const message = getErrorMessage(error, "Orders could not be loaded.");
+      setFetchError(message);
+      setNotice({ type: "error", text: `Firebase read error: ${message}` });
+    } finally {
+      setLoadingOrders(false);
+      setSelectedOrders([]);
     }
-    setLoadingOrders(false);
-    setSelectedOrders([]); 
-  };
+  }
 
-  const handleChange = (e: any) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (passInput === ADMIN_PASSWORD) {
+      setIsAuth(true);
+      localStorage.setItem("adminAuth", "yes");
+      setNotice({ type: "success", text: "Welcome back. Dashboard is ready." });
+    } else {
+      setNotice({ type: "error", text: "Wrong password." });
+    }
+  }
 
-  // DOLAR YAZINCA DINAR HESAPLAR
-  const handleUSDChange = (e: any) => {
+  function handleLogout() {
+    setIsAuth(false);
+    localStorage.removeItem("adminAuth");
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleUSDChange(e: React.ChangeEvent<HTMLInputElement>) {
     const usd = e.target.value === "" ? 0 : Number(e.target.value);
-    setIsIqdDriving(false); // Dolar tetiklendiği an Dinar sürücülüğü biter
-    setFormData({ 
-      ...formData, 
-      amountUSD: usd, 
-      amountIQD: usd * exchangeRate 
-    });
-  };
+    setIsIqdDriving(false);
+    setFormData((prev) => ({ ...prev, amountUSD: usd, amountIQD: usd * exchangeRate }));
+  }
 
-  // DINAR YAZINCA DOLARI HESAPLAR VEYA KORUR
-  const handleIQDChange = (e: any) => {
+  function handleIQDChange(e: React.ChangeEvent<HTMLInputElement>) {
     const iqd = e.target.value === "" ? 0 : Number(e.target.value);
-    
-    // Eğer Dolar henüz 0 ise ya da zaten Dinar yazarak başladıysak otomatik hesaplamaya devam et
+
     if (formData.amountUSD === 0 || isIqdDriving) {
       const newUsd = exchangeRate > 0 ? Number((iqd / exchangeRate).toFixed(2)) : 0;
-      setFormData({ 
-        ...formData, 
-        amountIQD: iqd,
-        amountUSD: newUsd
-      });
+      setFormData((prev) => ({ ...prev, amountIQD: iqd, amountUSD: newUsd }));
       setIsIqdDriving(iqd > 0);
     } else {
-      // Eğer kullanıcı önce Dolar girip sonra Dinarı manuel yuvarlıyorsa Doları koru
-      setFormData({ 
-        ...formData, 
-        amountIQD: iqd
-      });
+      setFormData((prev) => ({ ...prev, amountIQD: iqd }));
     }
-  };
+  }
 
-  const handleRateChange = (e: any) => {
+  function handleRateChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const rate = Number(e.target.value) || 1200;
     setExchangeRate(rate);
-    setFormData({ 
-      ...formData, 
-      amountIQD: formData.amountUSD * rate 
-    });
-  };
+    setFormData((prev) => ({ ...prev, amountIQD: prev.amountUSD * rate }));
+  }
 
-  const handleSubmit = async (e: any) => {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    
-    let code = formData.orderCode.trim().toUpperCase();
-    if (/^\d+$/.test(code)) code = "DS" + code;
-    if (!code.startsWith("DS")) return alert("Order code must start with DS! (e.g., DS215)");
-    if (!formData.fullName || !formData.fullPhone) return alert("Please enter name and phone!");
+    setNotice(null);
+
+    const code = normalizeOrderCode(formData.orderCode);
+    if (!code || !/^DS\d+$/.test(code)) {
+      setNotice({ type: "error", text: "Order code must be DS + number. Example: DS215 or just 215." });
+      return;
+    }
+    if (!formData.fullName.trim() || !formData.fullPhone.trim()) {
+      setNotice({ type: "error", text: "Please enter customer name and phone." });
+      return;
+    }
 
     const nameStr = formData.fullName.trim();
     const nameFirstLetter = nameStr.charAt(0).toUpperCase();
     const nameLastLetter = nameStr.charAt(nameStr.length - 1).toUpperCase();
 
-    let phoneStr = formData.fullPhone.replace(/\D/g, ''); 
-    if (phoneStr.startsWith('964')) phoneStr = phoneStr.substring(3); 
-    if (phoneStr.startsWith('0')) phoneStr = phoneStr.substring(1); 
-    
-    const phoneNetwork = phoneStr.substring(0, 3) || "750"; 
-    const phoneFirst = phoneStr.substring(3, 4) || "*";     
-    const phoneLast = phoneStr.slice(-2) || "**";            
+    let phoneStr = formData.fullPhone.replace(/\D/g, "");
+    if (phoneStr.startsWith("964")) phoneStr = phoneStr.substring(3);
+    if (phoneStr.startsWith("0")) phoneStr = phoneStr.substring(1);
+
+    const phoneNetwork = phoneStr.substring(0, 3) || "750";
+    const phoneFirst = phoneStr.substring(3, 4) || "*";
+    const phoneLast = phoneStr.slice(-2) || "**";
 
     setLoading(true);
     try {
-      await setDoc(doc(db, "orders", code), {
-        title: formData.title, 
-        customerLang: formData.customerLang, 
-        nameFirstLetter,
-        nameLastLetter,
-        phoneNetwork,
-        phoneFirst,
-        phoneLast,
-        items: Number(formData.items),
-        date: formData.date,
-        amountUSD: Number(formData.amountUSD),
-        amountIQD: Number(formData.amountIQD),
-        shippingIQD: Number(formData.shippingIQD),
-        status: Number(formData.status),
-        _realName: formData.fullName,
-        _realPhone: formData.fullPhone
-      });
-      
-      alert("✅ Order Successfully Saved / Updated!");
-      
-      setFormData({
-        orderCode: "", title: "Miss", customerLang: "ku", fullName: "", fullPhone: "", items: 1, date: getTodayDate(), amountUSD: 0, amountIQD: 0, shippingIQD: 5000, status: 0
-      });
-      setIsIqdDriving(false);
-      fetchOrders(); 
-      
-    } catch (error) {
-      console.error("Error:", error);
-      alert("❌ An error occurred.");
-    }
-    setLoading(false);
-  };
+      await setDoc(
+        doc(db, "orders", code),
+        {
+          title: formData.title,
+          customerLang: formData.customerLang,
+          nameFirstLetter,
+          nameLastLetter,
+          phoneNetwork,
+          phoneFirst,
+          phoneLast,
+          items: Number(formData.items),
+          date: formData.date,
+          amountUSD: Number(formData.amountUSD),
+          amountIQD: Number(formData.amountIQD),
+          shippingIQD: Number(formData.shippingIQD),
+          status: Number(formData.status),
+          _realName: formData.fullName.trim(),
+          _realPhone: formData.fullPhone.trim(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
 
-  const handleEdit = (order: any) => {
+      setNotice({ type: "success", text: isEditing ? `${code} updated successfully.` : `${code} saved successfully.` });
+      setFormData(makeEmptyForm());
+      setIsIqdDriving(false);
+      await fetchOrders();
+    } catch (error: unknown) {
+      console.error("Save order error:", error);
+      setNotice({ type: "error", text: getErrorMessage(error, "Order could not be saved.") });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleEdit(order: Order) {
     setIsIqdDriving(false);
     setFormData({
       orderCode: order.id,
@@ -199,432 +322,739 @@ export default function AdminPanel() {
       customerLang: order.customerLang || "ku",
       fullName: order._realName || "",
       fullPhone: order._realPhone || "",
-      items: order.items || 1,
+      items: Number(order.items || 1),
       date: order.date || getTodayDate(),
-      amountUSD: order.amountUSD || 0,
-      amountIQD: order.amountIQD || 0,
-      shippingIQD: order.shippingIQD !== undefined ? order.shippingIQD : 5000,
-      status: order.status || 0,
+      amountUSD: Number(order.amountUSD || 0),
+      amountIQD: Number(order.amountIQD || 0),
+      shippingIQD: order.shippingIQD !== undefined ? Number(order.shippingIQD) : 5000,
+      status: Number(order.status || 0),
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+    setNotice({ type: "info", text: `${order.id} loaded. Edit the form and press Save/Update.` });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm(`Are you sure you want to delete order ${id}?`)) {
-      if (window.confirm(`⚠️ FINAL WARNING: This action cannot be undone. Delete ${id}?`)) {
-        try {
-          await deleteDoc(doc(db, "orders", id));
-          fetchOrders(); 
-        } catch (error) {
-          alert("Delete failed!");
-        }
-      }
+  async function handleDelete(id: string) {
+    const typed = window.prompt(`Type ${id} to permanently delete this order:`);
+    if (typed !== id) return;
+
+    try {
+      await deleteDoc(doc(db, "orders", id));
+      setNotice({ type: "success", text: `${id} deleted.` });
+      await fetchOrders();
+    } catch (error: unknown) {
+      console.error("Delete order error:", error);
+      setNotice({ type: "error", text: getErrorMessage(error, "Delete failed. Firestore rules may be blocking delete for safety.") });
     }
-  };
+  }
 
-  const sendWhatsApp = (order: any) => {
+  function sendWhatsApp(order: Order) {
     const lang = order.customerLang || "ku";
-    
+
     const statusTexts = {
       ku: ["داواکاری کرا", "داواکاری کڕدرا", "شین ئامادەی دەکات", "نێردرا بۆ دوبەی", "گەیشتە دوبەی", "لە دوبەی چاوەڕێ دەکات", "بەرەو کوردستان بەڕێکەوت", "وەرگیرا و پاکەت دەکرێت", "لە ڕێگایە بۆ گەیاندن", "گەیەنرا"],
-      ar: ["تم الطلب", "تم شراء الطلب", "تجهيز بواسطة شي إن", "شحن إلى دبي", "وصل إلى دبي", "في الانتظار بدبي", "في الطريق إلى كردستان", "تم الاستلام والتغليف", "في الطريق للتسليم", "تم التوصيل"]
+      ar: ["تم الطلب", "تم شراء الطلب", "تجهيز بواسطة شي إن", "شحن إلى دبي", "وصل إلى دبي", "في الانتظار بدبي", "في الطريق إلى كردستان", "تم الاستلام والتغليف", "في الطريق للتسليم", "تم التوصيل"],
     };
 
     const durations = {
       ku: ["لە چاوەڕوانیدایە", "12 - 24 کاتژمێر", "1 - 3 ڕۆژ", "6 - 10 ڕۆژ", "1 - 2 ڕۆژ", "1 - 2 ڕۆژ", "6 - 7 ڕۆژ", "یەک ڕۆژ", "1 - 2 ڕۆژ", "گەیەنرا"],
-      ar: ["قيد الانتظار", "12 - 24 ساعة", "1 - 3 أيام", "6 - 10 أيام", "1 - 2 أيام", "1 - 2 أيام", "6 - 7 أيام", "يوم واحد", "2 - 3 أيام", "تم التوصيل"]
+      ar: ["قيد الانتظار", "12 - 24 ساعة", "1 - 3 أيام", "6 - 10 أيام", "1 - 2 أيام", "1 - 2 أيام", "6 - 7 أيام", "يوم واحد", "2 - 3 أيام", "تم التوصيل"],
     };
-    
-    const trackingLink = `${window.location.origin}`; 
-    
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const currentDateStr = `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-    const nextStageName = order.status < 9 
-      ? statusTexts[lang as "ku"|"ar"][order.status + 1] 
-      : (lang === 'ku' ? 'گەیەنرا (Delivered)' : 'تم التوصيل (Delivered)');
+    const customerLang = lang === "ar" ? "ar" : "ku";
+    const currentStatus = Number(order.status || 0);
+    const trackingLink = `${window.location.origin}`;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const currentDateStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const nextStageName = currentStatus < 9 ? statusTexts[customerLang][currentStatus + 1] : customerLang === "ku" ? "گەیەنرا (Delivered)" : "تم التوصيل (Delivered)";
 
     let estDate = "";
     if (order.date) {
-      const parts = order.date.split('.');
-      if(parts.length === 3) {
+      const parts = order.date.split(".");
+      if (parts.length === 3) {
         const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-        d.setDate(d.getDate() + 20); 
-        estDate = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`;
+        d.setDate(d.getDate() + 20);
+        estDate = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
       }
     }
-    if(!estDate) estDate = (lang === 'ku' ? "15-20 ڕۆژ" : "15-20 يوماً");
+    if (!estDate) estDate = customerLang === "ku" ? "15-20 ڕۆژ" : "15-20 يوماً";
 
-    let message = "";
-    let greeting = "";
+    const customerName = order._realName || "";
+    const greeting =
+      customerLang === "ku"
+        ? `سڵاو بەڕێز ${order.title === "Miss" ? "خان " + customerName : "کاک " + customerName}`
+        : `مرحباً ${order.title === "Miss" ? "الآنسة" : "السيد"} ${customerName}`;
 
-    if (lang === "ku") {
-      greeting = `سڵاو بەڕێز ${order.title === 'Miss' ? 'خان ' + order._realName : 'کاک ' + order._realName}`;
-      message = `${greeting}،\n\n` +
-                `📅 بەرواری نامە: ${currentDateStr}\n\n` +
-                `📦 ژمارەی داواکاری: *${order.id}*\n` +
-                `🔄 قۆناغی ئێستا: *${statusTexts.ku[order.status]}*\n` +
-                `⏳ کاتی پێشبینیکراو بۆ ئەم قۆناغە: *${durations.ku[order.status]}*\n\n` +
-                (order.status < 9 ? `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` : '') +
-                `📆 کاتی خەمڵێنراوی گەیشتن: *${estDate}*\n\n` +
-                `🔗 بۆ بەدواداچوونی وردی داواکارییەکەت، سەردانی ئەم بەستەرە بکە:\n${trackingLink}`;
-    } else {
-      greeting = `مرحباً ${order.title === 'Miss' ? 'الآنسة' : 'السيد'} ${order._realName}`;
-      message = `${greeting}،\n\n` +
-                `📅 تاريخ الرسالة: ${currentDateStr}\n\n` +
-                `📦 رقم الطلب: *${order.id}*\n` +
-                `🔄 المرحلة الحالية: *${statusTexts.ar[order.status]}*\n` +
-                `⏳ الوقت المتوقع لهذه المرحلة: *${durations.ar[order.status]}*\n\n` +
-                (order.status < 9 ? `⏭️ المرحلة التالية: *${nextStageName}*\n\n` : '') +
-                `📆 تاريخ الوصول المتوقع: *${estDate}*\n\n` +
-                `🔗 لتتبع طلبك بالتفصيل، يرجى زيارة الرابط التالي:\n${trackingLink}`;
-    }
+    const message =
+      customerLang === "ku"
+        ? `${greeting}،\n\n📅 بەرواری نامە: ${currentDateStr}\n\n📦 ژمارەی داواکاری: *${order.id}*\n🔄 قۆناغی ئێستا: *${statusTexts.ku[currentStatus]}*\n⏳ کاتی پێشبینیکراو بۆ ئەم قۆناغە: *${durations.ku[currentStatus]}*\n\n${currentStatus < 9 ? `⏭️ قۆناغی داهاتوو: *${nextStageName}*\n\n` : ""}📆 کاتی خەمڵێنراوی گەیشتن: *${estDate}*\n\n🔗 بۆ بەدواداچوونی وردی داواکارییەکەت، سەردانی ئەم بەستەرە بکە:\n${trackingLink}`
+        : `${greeting}،\n\n📅 تاريخ الرسالة: ${currentDateStr}\n\n📦 رقم الطلب: *${order.id}*\n🔄 المرحلة الحالية: *${statusTexts.ar[currentStatus]}*\n⏳ الوقت المتوقع لهذه المرحلة: *${durations.ar[currentStatus]}*\n\n${currentStatus < 9 ? `⏭️ المرحلة التالية: *${nextStageName}*\n\n` : ""}📆 تاريخ الوصول المتوقع: *${estDate}*\n\n🔗 لتتبع طلبك بالتفصيل، يرجى زيارة الرابط التالي:\n${trackingLink}`;
 
-    let phone = order._realPhone.replace(/\D/g, '');
-    if (phone.startsWith('0')) phone = phone.substring(1);
-    if (!phone.startsWith('964')) phone = '964' + phone;
+    window.location.href = `https://api.whatsapp.com/send?phone=${cleanPhoneForWhatsApp(order._realPhone)}&text=${encodeURIComponent(message)}`;
+  }
 
-    window.location.href = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
-  };
-
-  const enStatusLabels = [
-    "0 - Order Placed",
-    "1 - Order Purchased",
-    "2 - Preparing by Shein",
-    "3 - Shipped to Dubai",
-    "4 - Arrived in Dubai",
-    "5 - Waiting in Dubai",
-    "6 - On the way to Kurdistan",
-    "7 - Received & Packing",
-    "8 - Out for Delivery",
-    "9 - Delivered"
-  ];
-
-  const handleQuickStatusChange = async (id: string, newStatus: string) => {
+  async function handleQuickStatusChange(id: string, newStatus: string) {
     try {
-      await updateDoc(doc(db, "orders", id), { status: Number(newStatus) });
-      fetchOrders(); 
-    } catch (error) {
-      alert("❌ Status update failed!");
+      await updateDoc(doc(db, "orders", id), { status: Number(newStatus), updatedAt: new Date().toISOString() });
+      setOrders((prev) => prev.map((order) => (order.id === id ? { ...order, status: Number(newStatus) } : order)));
+      setNotice({ type: "success", text: `${id} status updated.` });
+    } catch (error: unknown) {
+      console.error("Status update error:", error);
+      setNotice({ type: "error", text: getErrorMessage(error, "Status update failed.") });
     }
-  };
+  }
 
-  const handleSort = (key: string) => {
-    let direction: "asc" | "desc" = "asc";
+  function handleSort(key: keyof Order | "id") {
+    let direction: SortDirection = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc") direction = "desc";
     setSortConfig({ key, direction });
-  };
+  }
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedOrders(displayedOrders.map(o => o.id));
-    } else {
-      setSelectedOrders([]);
+  function handleSelectAll(e: React.ChangeEvent<HTMLInputElement>) {
+    setSelectedOrders(e.target.checked ? displayedOrders.map((order) => order.id) : []);
+  }
+
+  function handleSelectOne(id: string) {
+    setSelectedOrders((prev) => (prev.includes(id) ? prev.filter((orderId) => orderId !== id) : [...prev, id]));
+  }
+
+  async function handleBulkUpdate() {
+    if (selectedOrders.length === 0) {
+      setNotice({ type: "error", text: "Select at least one order." });
+      return;
     }
-  };
 
-  const handleSelectOne = (id: string) => {
-    if (selectedOrders.includes(id)) {
-      setSelectedOrders(selectedOrders.filter(orderId => orderId !== id));
-    } else {
-      setSelectedOrders([...selectedOrders, id]);
-    }
-  };
-
-  const handleBulkUpdate = async () => {
-    if (selectedOrders.length === 0) return alert("Select at least one order!");
     setLoading(true);
     try {
       for (const id of selectedOrders) {
-        await updateDoc(doc(db, "orders", id), { status: Number(bulkStatus) });
+        await updateDoc(doc(db, "orders", id), { status: Number(bulkStatus), updatedAt: new Date().toISOString() });
       }
-      alert(`✅ ${selectedOrders.length} orders updated to Status ${bulkStatus}`);
-      fetchOrders();
-    } catch (error) {
-      alert("❌ Update failed.");
+      setNotice({ type: "success", text: `${selectedOrders.length} orders updated to status ${bulkStatus}.` });
+      await fetchOrders();
+    } catch (error: unknown) {
+      console.error("Bulk update error:", error);
+      setNotice({ type: "error", text: getErrorMessage(error, "Bulk update failed.") });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedOrders.length === 0) return alert("Select at least one order!");
-    if (window.confirm(`Are you sure you want to delete ${selectedOrders.length} selected orders?`)) {
-      if (window.confirm(`⚠️ FINAL WARNING: This action will completely erase ${selectedOrders.length} orders. Are you REALLY sure?`)) {
-        setLoading(true);
-        try {
-          for (const id of selectedOrders) {
-            await deleteDoc(doc(db, "orders", id));
-          }
-          alert("✅ Selected orders deleted.");
-          fetchOrders();
-        } catch (error) {
-          alert("❌ Delete failed.");
-        }
-        setLoading(false);
-      }
-    }
-  };
-
-  let displayedOrders = [...orders];
-  
-  if (searchTerm) {
-    const lowerSearch = searchTerm.toLowerCase();
-    displayedOrders = displayedOrders.filter(o => 
-      o.id.toLowerCase().includes(lowerSearch) || 
-      (o._realName && o._realName.toLowerCase().includes(lowerSearch)) || 
-      (o._realPhone && o._realPhone.includes(lowerSearch))
-    );
   }
 
-  if (filterStatus !== "all") {
-    displayedOrders = displayedOrders.filter(o => o.status === Number(filterStatus));
+  async function handleBulkDelete() {
+    if (selectedOrders.length === 0) {
+      setNotice({ type: "error", text: "Select at least one order." });
+      return;
+    }
+
+    const typed = window.prompt(`Type DELETE ${selectedOrders.length} to delete selected orders:`);
+    if (typed !== `DELETE ${selectedOrders.length}`) return;
+
+    setLoading(true);
+    try {
+      for (const id of selectedOrders) {
+        await deleteDoc(doc(db, "orders", id));
+      }
+      setNotice({ type: "success", text: `${selectedOrders.length} selected orders deleted.` });
+      await fetchOrders();
+    } catch (error: unknown) {
+      console.error("Bulk delete error:", error);
+      setNotice({ type: "error", text: getErrorMessage(error, "Bulk delete failed. Firestore rules may be blocking delete for safety.") });
+    } finally {
+      setLoading(false);
+    }
   }
-  
-  displayedOrders.sort((a, b) => {
-    const valA = a[sortConfig.key];
-    const valB = b[sortConfig.key];
-    if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-    if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-    return 0;
-  });
+
+  const sortMark = (key: keyof Order | "id") => (sortConfig.key === key ? (sortConfig.direction === "asc" ? " ↑" : " ↓") : "");
 
   if (!isAuth) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", background: "#f8fafc", fontFamily: "sans-serif" }}>
-        <form onSubmit={handleLogin} style={{ background: "white", padding: "40px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", textAlign: "center", width: "350px" }}>
-          <h2 style={{ color: "#059669", marginBottom: "20px" }}>🔒 Admin Login</h2>
-          <input type="password" value={passInput} onChange={(e) => setPassInput(e.target.value)} placeholder="Enter admin password" style={{ width: "100%", padding: "12px", marginBottom: "20px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", boxSizing: "border-box" }} />
-          <button type="submit" style={{ background: "#059669", color: "white", padding: "12px 20px", border: "none", borderRadius: "10px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", width: "100%" }}>Login</button>
-        </form>
-      </div>
+      <>
+        <AdminStyles />
+        <main className="admin-login-page">
+          <form className="login-card" onSubmit={handleLogin}>
+            <div className="login-badge">DS</div>
+            <h1>Dalin Admin</h1>
+            <p>Secure staff dashboard for tracking orders.</p>
+            {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+            <input
+              type="password"
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+              placeholder="Enter admin password"
+              autoFocus
+            />
+            <button type="submit">Login</button>
+          </form>
+        </main>
+      </>
     );
   }
 
   return (
     <>
-      <style>{`
-        .admin-wrap { padding: 40px 20px; max-width: 1050px; margin: 0 auto; font-family: sans-serif; }
-        .form-grid { display: flex; gap: 15px; flex-wrap: wrap; }
-        .form-col { flex: 1 1 40%; }
-        .form-col-3 { flex: 1 1 30%; }
-        .action-bar { display: flex; justify-content: space-between; align-items: center; gap: 15px; background: #f8fafc; padding: 15px; border-radius: 15px; margin-bottom: 20px; }
-        .table-responsive { overflow-x: auto; }
-        input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; }
-        
-        @media (max-width: 768px) {
-          .admin-wrap { padding: 20px 10px; }
-          .form-col, .form-col-3 { flex: 1 1 100%; }
-          .action-bar { flex-direction: column; align-items: stretch; }
-          .action-bar > div { display: flex; flex-direction: column; gap: 10px; width: 100%; }
-          .bulk-btn { width: 100%; }
-        }
-      `}</style>
-
-      <div className="admin-wrap">
-        <h1 style={{ color: "#059669", textAlign: "center", marginBottom: "30px", fontSize: "2rem", fontWeight: "900" }}>⚙️ DALIN ADMIN DASHBOARD</h1>
-        
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "15px", background: "#f3f5f8", padding: "30px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
-          
-          <div className="form-grid">
-            <div className="form-col" style={{ flex: "1 1 30%", position: "relative" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:کۆدی داواکاری</label>
-              {isEditing && (
-                <div style={{ position: "absolute", top: "-5px", right: "0", background: "#fef3c7", color: "#d97706", padding: "2px 8px", borderRadius: "5px", fontSize: "11px", fontWeight: "bold" }}>
-                  ⚠️ کودەکە هەیە ئێستا گۆرانکاری دەکەی
-                </div>
-              )}
-              <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "16px", fontWeight: "bold", boxSizing: "border-box" }} />
-            </div>
-            <div className="form-col" style={{ flex: "1 1 15%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:نازناو</label>
-              <select name="title" value={formData.title} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", boxSizing: "border-box" }}>
-                <option value="Mr">Mr.</option>
-                <option value="Miss">Miss.</option>
-              </select>
-            </div>
-            <div className="form-col" style={{ flex: "1 1 20%" }}>
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:زمانی کڕیار</label>
-              <select name="customerLang" value={formData.customerLang} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", boxSizing: "border-box" }}>
-                <option value="ku">Kurdish</option>
-                <option value="ar">Arabic</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ناوی تەواوی کڕیار</label>
-              <input type="text" placeholder="e.g., Dahat" name="fullName" value={formData.fullName} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی مۆبایل</label>
-              <input type="text" placeholder="e.g., 0750 123 4567" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:ژمارەی کاڵاکان</label>
-              <input type="number" name="items" value={formData.items} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <div className="form-col">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:بەرواری داواکاری</label>
-              <input type="text" placeholder="03.06.2026" name="date" value={formData.date} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-col-3">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:بڕی گشتی (دۆلار)</label>
-                <span style={{ fontSize: "11px", color: "#059669", fontWeight: "bold" }}>
-                  Rate: 
-                  <select value={exchangeRate} onChange={handleRateChange} style={{ width: "55px", background: "transparent", border: "none", borderBottom: "1px solid #059669", color: "#059669", fontWeight: "bold", marginLeft: "2px", outline: "none", textAlign: "center", cursor: "pointer" }}>
-                    <option value={1200}>1200</option>
-                    <option value={1190}>1190</option>
-                  </select>
-                </span>
-              </div>
-              <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <div className="form-col-3">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دینار</label>
-              <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleIQDChange} required style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", background: "#f8fafc", boxSizing: "border-box" }} />
-            </div>
-            <div className="form-col-3">
-              <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:کرێی گەیاندن</label>
-              <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", cursor: "pointer", appearance: "menulist", boxSizing: "border-box" }}>
-                <option value={5000}>5000 IQD</option>
-                <option value={0}>0 IQD (Free)</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: "14px", color: "#64748b", fontWeight: "bold" }}>:دۆخی داواکاری</label>
-            <select name="status" value={formData.status} onChange={handleChange} style={{ width: "100%", padding: "12px", marginTop: "5px", borderRadius: "10px", border: "1px solid #059669", outline: "none", fontWeight: "bold", color: "#059669", cursor: "pointer", appearance: "menulist", boxSizing: "border-box" }}>
-              {enStatusLabels.map((label, idx) => (
-                <option key={idx} value={idx}>{label}</option>
-              ))}
-            </select>
-          </div>
-
-          <button type="submit" disabled={loading} style={{ background: "#059669", color: "white", padding: "16px", border: "none", borderRadius: "10px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", marginTop: "15px", transition: "0.3s", boxShadow: "0 4px 15px rgba(5,150,105,0.3)" }}>
-            {loading ? "چاوەڕێ بکە..." : "SAVE/UPDATE"}
-          </button>
-        </form>
-
-        <div style={{ marginTop: "50px", background: "white", padding: "30px 20px", borderRadius: "20px", boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
-          
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
-            <h2 style={{ color: "#334155", margin: 0, fontSize: "1.5rem" }}>📦 Manage Orders ({displayedOrders.length})</h2>
-            
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              <input 
-                type="text" 
-                placeholder="🔍 Search Name, Phone or DS..." 
-                value={searchTerm} 
-                onChange={(e) => setSearchTerm(e.target.value)} 
-                style={{ padding: "8px 15px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", width: "220px", fontSize: "14px" }} 
-              />
-              
-              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "8px 15px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontWeight: "bold", cursor: "pointer", fontSize: "14px" }}>
-                <option value="all">Filter: Show All</option>
-                {enStatusLabels.map((label, idx) => (
-                  <option key={idx} value={idx}>{label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="action-bar" style={{ opacity: selectedOrders.length > 0 ? 1 : 0.5, pointerEvents: selectedOrders.length > 0 ? "auto" : "none" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontWeight: "bold", color: "#059669" }}>{selectedOrders.length} selected</span>
-              <select value={bulkStatus} onChange={(e) => setBulkStatus(Number(e.target.value))} style={{ padding: "8px", borderRadius: "8px", border: "1px solid #cbd5e1" }}>
-                {enStatusLabels.map((label, idx) => (
-                  <option key={idx} value={idx}>Change to: {label.split(' - ')[0]}</option>
-                ))}
-              </select>
-              <button onClick={handleBulkUpdate} className="bulk-btn" style={{ background: "#059669", color: "white", border: "none", padding: "8px 15px", borderRadius: "8px", fontWeight: "bold", cursor: "pointer" }}>Update Status</button>
-            </div>
+      <AdminStyles />
+      <main className="admin-page">
+        <section className="admin-shell">
+          <header className="admin-header">
             <div>
-              <button onClick={handleBulkDelete} className="bulk-btn" style={{ background: "#ef4444", color: "white", border: "none", padding: "8px 15px", borderRadius: "8px", fontWeight: "bold", cursor: "pointer" }}>Delete Selected</button>
+              <span className="eyebrow">Dalin Shopping</span>
+              <h1>Admin Dashboard</h1>
+              <p>Manage orders, customer updates, WhatsApp messages and tracking status.</p>
             </div>
-          </div>
+            <div className="header-actions">
+              <Link href="/" className="secondary-link">View Tracking Page</Link>
+              <button type="button" className="ghost-btn" onClick={fetchOrders} disabled={loadingOrders}>Refresh</button>
+              <button type="button" className="danger-soft-btn" onClick={handleLogout}>Logout</button>
+            </div>
+          </header>
 
-          {loadingOrders ? (
-            <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>Loading orders...</p>
-          ) : displayedOrders.length === 0 ? (
-            <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>No orders found.</p>
-          ) : (
-            <div className="table-responsive">
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "850px" }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left", fontSize: "13px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "15px", borderRadius: "10px 0 0 10px", width: "40px" }}>
-                      <input type="checkbox" checked={selectedOrders.length === displayedOrders.length && displayedOrders.length > 0} onChange={handleSelectAll} />
-                    </th>
-                    <th style={{ padding: "15px", cursor: "pointer" }} onClick={() => handleSort("id")}>
-                      Code {sortConfig.key === "id" ? (sortConfig.direction === "asc" ? "↑" : "↓") : ""}
-                    </th>
-                    <th style={{ padding: "15px", cursor: "pointer" }} onClick={() => handleSort("_realName")}>
-                      Customer {sortConfig.key === "_realName" ? (sortConfig.direction === "asc" ? "↑" : "↓") : ""}
-                    </th>
-                    <th style={{ padding: "15px", cursor: "pointer" }} onClick={() => handleSort("status")}>
-                      Status {sortConfig.key === "status" ? (sortConfig.direction === "asc" ? "↑" : "↓") : ""}
-                    </th>
-                    <th style={{ padding: "15px", cursor: "pointer" }} onClick={() => handleSort("amountUSD")}>
-                      Price {sortConfig.key === "amountUSD" ? (sortConfig.direction === "asc" ? "↑" : "↓") : ""}
-                    </th>
-                    <th style={{ padding: "15px", cursor: "pointer" }} onClick={() => handleSort("date")}>
-                      Date {sortConfig.key === "date" ? (sortConfig.direction === "asc" ? "↑" : "↓") : ""}
-                    </th>
-                    <th style={{ padding: "15px", textAlign: "right", borderRadius: "0 10px 10px 0" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedOrders.map((order) => (
-                    <tr key={order.id} style={{ borderBottom: "1px solid #f1f5f9", background: selectedOrders.includes(order.id) ? "#f0fdf4" : "transparent" }}>
-                      <td style={{ padding: "15px" }}>
-                        <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOne(order.id)} />
-                      </td>
-                      <td style={{ padding: "15px", fontWeight: "bold", color: "#0f172a" }}>{order.id}</td>
-                      <td style={{ padding: "15px" }}>
-                        <div style={{ fontWeight: "bold", color: "#334155" }}><span style={{color: "#94a3b8", fontSize: "11px"}}>{order.title}.</span> {order._realName}</div>
-                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>{order._realPhone}</div>
-                      </td>
-                      <td style={{ padding: "15px" }}>
-                        <select 
-                          value={order.status} 
-                          onChange={(e) => handleQuickStatusChange(order.id, e.target.value)} 
-                          style={{ background: "rgba(16,185,129,0.1)", color: "#059669", padding: "5px 10px", borderRadius: "15px", fontSize: "12px", fontWeight: "bold", border: "none", outline: "none", cursor: "pointer" }}
-                        >
-                          {enStatusLabels.map((label, idx) => (
-                            <option key={idx} value={idx}>{label}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: "15px", fontWeight: "bold", color: "#0f172a" }}>${order.amountUSD}</td>
-                      <td style={{ padding: "15px", color: "#64748b", fontSize: "13px" }}>{order.date}</td>
-                      <td style={{ padding: "15px", textAlign: "right", display: "flex", gap: "5px", justifyContent: "flex-end" }}>
-                        
-                        <button onClick={() => sendWhatsApp(order)} style={{ background: "#25D366", color: "white", border: "none", padding: "6px 10px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }} title="Send WhatsApp">
-                          <span style={{ fontSize: "14px" }}>💬</span> WA
-                        </button>
-                        
-                        <button onClick={() => handleEdit(order)} style={{ background: "#eff6ff", color: "#3b82f6", border: "none", padding: "6px 12px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>Edit</button>
-                        <button onClick={() => handleDelete(order.id)} style={{ background: "#fef2f2", color: "#ef4444", border: "none", padding: "6px 12px", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}>Del</button>
-                      </td>
-                    </tr>
+          {notice && <div className={`notice ${notice.type}`}>{notice.text}</div>}
+          {fetchError && <div className="notice error">Firebase error: {fetchError}</div>}
+
+          <section className="stats-grid">
+            <div className="stat-card">
+              <span>Total Orders</span>
+              <strong>{stats.total}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Active Orders</span>
+              <strong>{stats.active}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Delivered</span>
+              <strong>{stats.delivered}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Total USD</span>
+              <strong>{formatUSD(stats.totalUSD)}</strong>
+            </div>
+          </section>
+
+          <section className="panel-card form-panel">
+            <div className="panel-title-row">
+              <div>
+                <span className="eyebrow">Order Form</span>
+                <h2>{isEditing ? "Update Existing Order" : "Add New Order"}</h2>
+              </div>
+              {isEditing && <span className="edit-chip">Editing {normalizedCode}</span>}
+            </div>
+
+            <form onSubmit={handleSubmit} className="order-form">
+              <div className="form-grid three">
+                <label>
+                  <span>Order Code</span>
+                  <input type="text" name="orderCode" value={formData.orderCode} onChange={handleChange} required placeholder="DS215 or 215" />
+                </label>
+                <label>
+                  <span>Title</span>
+                  <select name="title" value={formData.title} onChange={handleChange}>
+                    <option value="Mr">Mr.</option>
+                    <option value="Miss">Miss.</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Customer Language</span>
+                  <select name="customerLang" value={formData.customerLang} onChange={handleChange}>
+                    <option value="ku">Kurdish</option>
+                    <option value="ar">Arabic</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="form-grid two">
+                <label>
+                  <span>Customer Full Name</span>
+                  <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required placeholder="Customer name" />
+                </label>
+                <label>
+                  <span>Phone Number</span>
+                  <input type="text" name="fullPhone" value={formData.fullPhone} onChange={handleChange} required placeholder="0750 123 4567" />
+                </label>
+              </div>
+
+              <div className="form-grid two">
+                <label>
+                  <span>Items</span>
+                  <input type="number" min="1" name="items" value={formData.items} onChange={handleChange} required />
+                </label>
+                <label>
+                  <span>Order Date</span>
+                  <input type="text" name="date" value={formData.date} onChange={handleChange} required placeholder="04.07.2026" />
+                </label>
+              </div>
+
+              <div className="form-grid three">
+                <label>
+                  <span className="label-with-select">
+                    Amount USD
+                    <select value={exchangeRate} onChange={handleRateChange}>
+                      <option value={1200}>Rate 1200</option>
+                      <option value={1190}>Rate 1190</option>
+                    </select>
+                  </span>
+                  <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required />
+                </label>
+                <label>
+                  <span>Amount IQD</span>
+                  <input type="number" name="amountIQD" value={formData.amountIQD === 0 ? "" : formData.amountIQD} placeholder="0" onChange={handleIQDChange} required />
+                </label>
+                <label>
+                  <span>Delivery Fee</span>
+                  <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange}>
+                    <option value={5000}>5000 IQD</option>
+                    <option value={0}>0 IQD (Free)</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="full-row">
+                <span>Order Status</span>
+                <select name="status" value={formData.status} onChange={handleChange}>
+                  {STATUS_LABELS.map((label, idx) => (
+                    <option key={idx} value={idx}>{label}</option>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                </select>
+              </label>
 
-      </div>
+              <div className="form-actions">
+                <button type="button" className="ghost-btn" onClick={() => { setFormData(makeEmptyForm()); setNotice(null); }}>
+                  Clear Form
+                </button>
+                <button type="submit" className="primary-btn" disabled={loading}>
+                  {loading ? "Saving..." : isEditing ? "Save Update" : "Save Order"}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="panel-card orders-panel">
+            <div className="panel-title-row compact">
+              <div>
+                <span className="eyebrow">Orders</span>
+                <h2>Manage Orders <small>({displayedOrders.length})</small></h2>
+              </div>
+              <div className="filter-row">
+                <input
+                  type="text"
+                  placeholder="Search code, name or phone"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                  <option value="all">Show All</option>
+                  {STATUS_LABELS.map((label, idx) => (
+                    <option key={idx} value={idx}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className={`bulk-bar ${selectedOrders.length > 0 ? "active" : ""}`}>
+              <label className="select-all-inline">
+                <input
+                  type="checkbox"
+                  checked={selectedOrders.length === displayedOrders.length && displayedOrders.length > 0}
+                  onChange={handleSelectAll}
+                />
+                <span>{selectedOrders.length} selected</span>
+              </label>
+              <select value={bulkStatus} onChange={(e) => setBulkStatus(Number(e.target.value))}>
+                {STATUS_LABELS.map((label, idx) => (
+                  <option key={idx} value={idx}>Change to: {label}</option>
+                ))}
+              </select>
+              <button type="button" className="primary-soft-btn" onClick={handleBulkUpdate} disabled={selectedOrders.length === 0 || loading}>Update Status</button>
+              <button type="button" className="danger-soft-btn" onClick={handleBulkDelete} disabled={selectedOrders.length === 0 || loading}>Delete Selected</button>
+            </div>
+
+            {loadingOrders ? (
+              <div className="empty-state">Loading orders...</div>
+            ) : displayedOrders.length === 0 ? (
+              <div className="empty-state">No orders found.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="orders-table">
+                  <thead>
+                    <tr>
+                      <th className="check-col"></th>
+                      <th onClick={() => handleSort("id")}>Code{sortMark("id")}</th>
+                      <th onClick={() => handleSort("_realName")}>Customer{sortMark("_realName")}</th>
+                      <th onClick={() => handleSort("status")}>Status{sortMark("status")}</th>
+                      <th onClick={() => handleSort("amountUSD")}>Price{sortMark("amountUSD")}</th>
+                      <th onClick={() => handleSort("date")}>Date{sortMark("date")}</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedOrders.map((order) => {
+                      const status = Number(order.status || 0);
+                      return (
+                        <tr key={order.id} className={selectedOrders.includes(order.id) ? "selected-row" : ""}>
+                          <td>
+                            <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOne(order.id)} />
+                          </td>
+                          <td>
+                            <strong className="order-code">{order.id}</strong>
+                          </td>
+                          <td>
+                            <div className="customer-cell">
+                              <strong>{order.title}. {order._realName || "No name"}</strong>
+                              <span>{order._realPhone || "No phone"}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <select className={`status-select ${STATUS_TONE[status] || "neutral"}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
+                              {STATUS_LABELS.map((label, idx) => (
+                                <option key={idx} value={idx}>{label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <strong>{formatUSD(order.amountUSD)}</strong>
+                            <span className="sub-money">{formatIQD(order.amountIQD)}</span>
+                          </td>
+                          <td>{order.date}</td>
+                          <td>
+                            <div className="row-actions">
+                              <button type="button" className="wa-btn" onClick={() => sendWhatsApp(order)}>WA</button>
+                              <button type="button" className="edit-btn" onClick={() => handleEdit(order)}>Edit</button>
+                              <button type="button" className="delete-btn" onClick={() => handleDelete(order.id)}>Del</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </section>
+      </main>
     </>
+  );
+}
+
+function AdminStyles() {
+  return (
+    <style>{`
+      :root {
+        --admin-bg: #eef3f7;
+        --admin-card: rgba(255, 255, 255, 0.92);
+        --admin-text: #0f172a;
+        --admin-muted: #64748b;
+        --admin-border: #e2e8f0;
+        --admin-primary: #059669;
+        --admin-primary-dark: #047857;
+        --admin-danger: #ef4444;
+        --admin-shadow: 0 24px 70px rgba(15, 23, 42, 0.10);
+        --admin-radius: 24px;
+      }
+
+      .admin-login-page,
+      .admin-page {
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--admin-text);
+        background:
+          radial-gradient(circle at top left, rgba(5, 150, 105, 0.18), transparent 34%),
+          radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 32%),
+          linear-gradient(135deg, #f8fafc 0%, #eef3f7 100%);
+      }
+
+      .admin-login-page {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .login-card {
+        width: min(420px, 100%);
+        background: var(--admin-card);
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        border-radius: 32px;
+        padding: 36px;
+        box-shadow: var(--admin-shadow);
+        backdrop-filter: blur(18px);
+        text-align: center;
+      }
+
+      .login-badge {
+        width: 76px;
+        height: 76px;
+        margin: 0 auto 18px;
+        border-radius: 24px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, var(--admin-primary), #10b981);
+        color: white;
+        font-size: 28px;
+        font-weight: 950;
+        letter-spacing: -1px;
+        box-shadow: 0 14px 30px rgba(5, 150, 105, 0.26);
+      }
+
+      .login-card h1,
+      .admin-header h1,
+      .panel-title-row h2 {
+        margin: 0;
+        letter-spacing: -0.04em;
+      }
+
+      .login-card p,
+      .admin-header p {
+        margin: 10px 0 22px;
+        color: var(--admin-muted);
+        line-height: 1.6;
+      }
+
+      .login-card input,
+      .order-form input,
+      .order-form select,
+      .filter-row input,
+      .filter-row select,
+      .bulk-bar select {
+        width: 100%;
+        border: 1px solid var(--admin-border);
+        background: white;
+        border-radius: 14px;
+        padding: 13px 14px;
+        color: var(--admin-text);
+        font-size: 14px;
+        outline: none;
+        transition: 0.2s ease;
+      }
+
+      .login-card input:focus,
+      .order-form input:focus,
+      .order-form select:focus,
+      .filter-row input:focus,
+      .filter-row select:focus,
+      .bulk-bar select:focus {
+        border-color: rgba(5, 150, 105, 0.55);
+        box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.12);
+      }
+
+      .login-card button,
+      .primary-btn {
+        width: 100%;
+        border: none;
+        border-radius: 16px;
+        padding: 14px 18px;
+        color: white;
+        background: linear-gradient(135deg, var(--admin-primary), #10b981);
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: 0 12px 24px rgba(5, 150, 105, 0.22);
+        transition: 0.2s ease;
+      }
+
+      button:hover,
+      .secondary-link:hover { transform: translateY(-1px); }
+      button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+      .admin-page { padding: 28px 18px 56px; }
+      .admin-shell { max-width: 1220px; margin: 0 auto; display: grid; gap: 20px; }
+
+      .admin-header,
+      .panel-card,
+      .stat-card {
+        background: var(--admin-card);
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: var(--admin-shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .admin-header {
+        border-radius: 32px;
+        padding: 28px;
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .admin-header h1 { font-size: clamp(2rem, 4vw, 3.4rem); }
+      .eyebrow { color: var(--admin-primary); text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; font-weight: 950; }
+
+      .header-actions,
+      .form-actions,
+      .filter-row,
+      .row-actions,
+      .bulk-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .secondary-link,
+      .ghost-btn,
+      .danger-soft-btn,
+      .primary-soft-btn,
+      .wa-btn,
+      .edit-btn,
+      .delete-btn {
+        border: none;
+        border-radius: 13px;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+        text-decoration: none;
+        transition: 0.2s ease;
+        white-space: nowrap;
+      }
+
+      .secondary-link,
+      .ghost-btn {
+        color: var(--admin-text);
+        background: #f8fafc;
+        border: 1px solid var(--admin-border);
+      }
+
+      .primary-soft-btn { background: #d1fae5; color: #047857; }
+      .danger-soft-btn { background: #fee2e2; color: #b91c1c; }
+      .wa-btn { background: #dcfce7; color: #15803d; }
+      .edit-btn { background: #dbeafe; color: #1d4ed8; }
+      .delete-btn { background: #fee2e2; color: #dc2626; }
+
+      .notice {
+        border-radius: 16px;
+        padding: 13px 16px;
+        font-weight: 800;
+        border: 1px solid transparent;
+      }
+      .notice.success { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+      .notice.error { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+      .notice.info { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .stat-card {
+        border-radius: 22px;
+        padding: 20px;
+      }
+      .stat-card span { display: block; color: var(--admin-muted); font-weight: 800; font-size: 13px; margin-bottom: 8px; }
+      .stat-card strong { display: block; font-size: 28px; letter-spacing: -0.04em; }
+
+      .panel-card {
+        border-radius: var(--admin-radius);
+        padding: 24px;
+      }
+
+      .panel-title-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+        margin-bottom: 20px;
+      }
+      .panel-title-row.compact { align-items: center; }
+      .panel-title-row h2 { font-size: 1.5rem; }
+      .panel-title-row small { color: var(--admin-muted); font-size: 0.9rem; }
+      .edit-chip { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 999px; font-weight: 900; font-size: 12px; }
+
+      .order-form { display: grid; gap: 15px; }
+      .form-grid { display: grid; gap: 15px; }
+      .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .order-form label { display: grid; gap: 7px; color: var(--admin-muted); font-size: 13px; font-weight: 900; }
+      .order-form label span { display: flex; justify-content: space-between; align-items: center; }
+      .label-with-select select { width: auto; padding: 4px 8px; border-radius: 999px; font-size: 11px; }
+      .full-row { grid-column: 1 / -1; }
+      .form-actions { justify-content: flex-end; border-top: 1px solid var(--admin-border); padding-top: 15px; }
+      .form-actions .primary-btn { width: auto; min-width: 170px; }
+
+      .filter-row { justify-content: flex-end; }
+      .filter-row input { width: 250px; }
+      .filter-row select { width: 220px; }
+
+      .bulk-bar {
+        background: #f8fafc;
+        border: 1px dashed var(--admin-border);
+        border-radius: 18px;
+        padding: 12px;
+        margin-bottom: 16px;
+        opacity: 0.72;
+      }
+      .bulk-bar.active { border-style: solid; opacity: 1; background: #f0fdf4; }
+      .select-all-inline { display: inline-flex; align-items: center; gap: 8px; font-weight: 900; color: var(--admin-primary); }
+      .select-all-inline input,
+      .orders-table input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--admin-primary); cursor: pointer; }
+      .bulk-bar select { max-width: 260px; }
+
+      .table-wrap { overflow-x: auto; border-radius: 18px; border: 1px solid var(--admin-border); }
+      .orders-table { width: 100%; min-width: 930px; border-collapse: collapse; background: white; }
+      .orders-table th {
+        color: #64748b;
+        background: #f8fafc;
+        text-align: left;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 14px;
+        cursor: pointer;
+      }
+      .orders-table th:last-child { cursor: default; text-align: right; }
+      .orders-table td { padding: 14px; border-top: 1px solid #eef2f7; vertical-align: middle; }
+      .orders-table tr.selected-row { background: #f0fdf4; }
+      .order-code { color: #047857; letter-spacing: 0.03em; }
+      .customer-cell { display: grid; gap: 4px; }
+      .customer-cell span,
+      .sub-money { color: var(--admin-muted); font-size: 12px; display: block; margin-top: 4px; }
+
+      .status-select {
+        border: none;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        outline: none;
+        cursor: pointer;
+        max-width: 190px;
+      }
+      .status-select.neutral { background: #f1f5f9; color: #475569; }
+      .status-select.blue { background: #dbeafe; color: #1d4ed8; }
+      .status-select.amber { background: #fef3c7; color: #b45309; }
+      .status-select.purple { background: #f3e8ff; color: #7e22ce; }
+      .status-select.cyan { background: #cffafe; color: #0e7490; }
+      .status-select.slate { background: #e2e8f0; color: #334155; }
+      .status-select.orange { background: #ffedd5; color: #c2410c; }
+      .status-select.indigo { background: #e0e7ff; color: #4338ca; }
+      .status-select.green { background: #dcfce7; color: #15803d; }
+      .status-select.emerald { background: #d1fae5; color: #047857; }
+
+      .row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+      .empty-state { text-align: center; color: var(--admin-muted); padding: 42px 20px; font-weight: 900; }
+
+      @media (max-width: 900px) {
+        .admin-header,
+        .panel-title-row.compact { flex-direction: column; align-items: stretch; }
+        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .form-grid.two,
+        .form-grid.three { grid-template-columns: 1fr; }
+        .filter-row { justify-content: stretch; }
+        .filter-row input,
+        .filter-row select { width: 100%; }
+        .header-actions > *,
+        .bulk-bar > *,
+        .form-actions > * { width: 100%; justify-content: center; text-align: center; }
+        .form-actions .primary-btn { width: 100%; }
+      }
+
+      @media (max-width: 560px) {
+        .admin-page { padding: 14px 10px 34px; }
+        .admin-header,
+        .panel-card { border-radius: 20px; padding: 18px; }
+        .stats-grid { grid-template-columns: 1fr; }
+        .stat-card strong { font-size: 24px; }
+        .panel-title-row { flex-direction: column; }
+      }
+    `}</style>
   );
 }

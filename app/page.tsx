@@ -20,7 +20,29 @@ import anim8 from "../animations/delivery.json";
 
 const animationsList = [anim0, anim1, anim2, anim3, anim4, anim5, anim6, anim7, anim8];
 
-const languageOptions = [
+
+type Lang = "en" | "ku" | "ar";
+
+type TrackingOrder = {
+  id: string;
+  title?: string;
+  customerLang?: Lang | string;
+  nameFirstLetter?: string;
+  nameLastLetter?: string;
+  phoneNetwork?: string;
+  phoneFirst?: string;
+  phoneLast?: string;
+  items: number;
+  date: string;
+  amountUSD: number;
+  amountIQD: number;
+  shippingIQD: number;
+  status: number;
+  _realName?: string;
+  _realPhone?: string;
+};
+
+const languageOptions: { code: Lang; label: string }[] = [
   { code: "en", label: "English" },
   { code: "ku", label: "کوردی" },
   { code: "ar", label: "العربية" }
@@ -160,15 +182,17 @@ const translations = {
 
 export default function OrderTracking() {
   const [orderCode, setOrderCode] = useState("");
-  const [orderData, setOrderData] = useState<any>(null);
+  const [orderData, setOrderData] = useState<TrackingOrder | null>(null);
+  const [isTracking, setIsTracking] = useState(false);
+  const [trackError, setTrackError] = useState("");
   const [theme, setTheme] = useState("dark"); 
-  const [lang, setLang] = useState<"en" | "ar" | "ku">("en");
+  const [lang, setLang] = useState<Lang>("en");
   
   const [isLangOpen, setIsLangOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminName, setAdminName] = useState("Dalin Admin");
+  const adminName = "Dalin Admin";
 
   const t = translations[lang];
   const statusLabels = [t.s0, t.s1, t.s2, t.s3, t.s4, t.s5, t.s6, t.s7, t.s8, t.s9];
@@ -176,6 +200,7 @@ export default function OrderTracking() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     if (localStorage.getItem("dalinIsAdmin") === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsAdmin(true);
     }
   }, [theme]);
@@ -192,23 +217,38 @@ export default function OrderTracking() {
     };
   }, []);
 
+  const normalizeTrackingCode = (value: string) => {
+    const numbersOnly = value.trim().toUpperCase().replace(/^DS/, "").replace(/\D/g, "");
+    return numbersOnly ? `DS${numbersOnly}` : "";
+  };
+
   const handleTrack = async () => {
-    if (!orderCode) return alert(t.notFound);
-    
-    const finalCode = "DS" + orderCode;
+    const finalCode = normalizeTrackingCode(orderCode);
+    if (!finalCode) {
+      setTrackError(t.notFound);
+      setOrderData(null);
+      return;
+    }
+
+    setIsTracking(true);
+    setTrackError("");
     
     try {
       const docRef = doc(db, "orders", finalCode);
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
-        setOrderData({ id: docSnap.id, ...docSnap.data() }); 
+        setOrderData({ id: docSnap.id, ...(docSnap.data() as Omit<TrackingOrder, "id">) }); 
       } else {
-        alert(t.notFound);
+        setOrderData(null);
+        setTrackError(t.notFound);
       }
     } catch (error) {
       console.error("Arama Hatasi:", error);
-      alert("Bir bağlantı hatası oluştu. Lütfen tekrar deneyin.");
+      setOrderData(null);
+      setTrackError("Connection error. Please try again.");
+    } finally {
+      setIsTracking(false);
     }
   };
 
@@ -259,14 +299,6 @@ export default function OrderTracking() {
 
   const handleDownloadPDF = () => {
     window.print();
-  };
-
-  const handleWhatsAppClick = () => {
-    // Sifiri atip +964 ekliyoruz
-    const phoneNumber = "9647517363196"; 
-    // Mevcut dildeki hazir mesaji ve siparis kodunu birlestiriyoruz
-    const message = encodeURIComponent(`${t.waMessage}${orderData.id}`);
-    window.open(`https://wa.me/${phoneNumber}?text=${message}`, '_blank');
   };
 
   const getDeliveryTime = () => {
@@ -343,7 +375,7 @@ export default function OrderTracking() {
                   key={opt.code} 
                   className={`dropdown-item ${lang === opt.code ? 'active' : ''}`}
                   onClick={() => {
-                    setLang(opt.code as any);
+                    setLang(opt.code);
                     setIsLangOpen(false);
                   }}
                 >
@@ -375,16 +407,26 @@ export default function OrderTracking() {
               placeholder={t.placeholder}
               value={orderCode}
               onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9]/g, '');
+                const val = e.target.value.toUpperCase().replace(/^DS/, "").replace(/[^0-9]/g, "");
                 setOrderCode(val);
+                setTrackError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleTrack();
               }}
               className="search-inner-input"
             />
           </div>
-          <button onClick={handleTrack} className="search-btn">
-            {t.trackBtn}
+          <button onClick={handleTrack} className="search-btn" disabled={isTracking}>
+            {isTracking ? "..." : t.trackBtn}
           </button>
         </div>
+
+        {trackError && (
+          <div className="tracking-error fade-content">
+            {trackError}
+          </div>
+        )}
 
         {orderData && (
           <div key={lang} className={`fade-content ${orderData.status === 9 ? 'stage9-active' : ''}`} style={{ position: "relative", overflow: "hidden", minHeight: "400px" }}>
