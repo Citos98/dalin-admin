@@ -1,27 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import Lottie from "lottie-react";
-
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "../firebase"; 
 
+import { db } from "../firebase";
 import "./style.css";
-
-import anim0 from "../animations/placed.json";
-import anim1 from "../animations/purchased.json";
-import anim2 from "../animations/preparing.json";
-import anim3 from "../animations/flight.json";
-import anim4 from "../animations/arrived.json";
-import anim5 from "../animations/waiting.json";
-import anim6 from "../animations/truck.json";
-import anim7 from "../animations/packing.json";
-import anim8 from "../animations/delivery.json";
-
-const animationsList = [anim0, anim1, anim2, anim3, anim4, anim5, anim6, anim7, anim8];
 
 
 type Lang = "en" | "ku" | "ar";
+type Theme = "dark" | "light";
 
 type TrackingOrder = {
   id: string;
@@ -32,28 +19,131 @@ type TrackingOrder = {
   phoneNetwork?: string;
   phoneFirst?: string;
   phoneLast?: string;
-  items: number;
-  date: string;
-  amountUSD: number;
-  amountIQD: number;
-  shippingIQD: number;
-  status: number;
+  items?: number;
+  date?: string;
+  amountUSD?: number;
+  amountIQD?: number;
+  shippingIQD?: number;
+  status?: number;
   _realName?: string;
   _realPhone?: string;
+  _deletedAt?: string;
+};
+
+type StatusValue = 0 | 2 | 3 | 4 | 6 | 7 | 8 | 9;
+
+type Translation = {
+  brand: string;
+  subtitle: string;
+  admin: string;
+  adminName: string;
+  dashboard: string;
+  logout: string;
+  themeLight: string;
+  themeDark: string;
+  heroKicker: string;
+  heroHeadline: string;
+  heroDescription: string;
+  routeShein: string;
+  routeDubai: string;
+  routeKurdistan: string;
+  metricStages: string;
+  metricCode: string;
+  metricSupport: string;
+  terminalTitle: string;
+  liveLookup: string;
+  placeholder: string;
+  trackBtn: string;
+  searching: string;
+  idleTitle: string;
+  idleText: string;
+  privacyNote: string;
+  notFound: string;
+  connectionError: string;
+  orderCode: string;
+  currentStage: string;
+  completed: string;
+  progress: string;
+  expected: string;
+  journey: string;
+  customerInfo: string;
+  phone: string;
+  items: string;
+  date: string;
+  equals: string;
+  deliveryFee: string;
+  totalAmount: string;
+  currencyIQD: string;
+  printBtn: string;
+  titleMr: string;
+  titleMiss: string;
+  needHelp: string;
+  whatsapp: string;
+  instagram: string;
+  waMessage: string;
+  adminPasswordPrompt: string;
+  adminWrongPassword: string;
+  s0: string;
+  s2: string;
+  s3: string;
+  s4: string;
+  s6: string;
+  s7: string;
+  s8: string;
+  s9: string;
+  time0: string;
+  time2: string;
+  time3: string;
+  time4: string;
+  time6: string;
+  time7: string;
+  time8Ku: string;
+  time8Ar: string;
+  time9: string;
 };
 
 const languageOptions: { code: Lang; label: string }[] = [
   { code: "en", label: "English" },
   { code: "ku", label: "کوردی" },
-  { code: "ar", label: "العربية" }
+  { code: "ar", label: "العربية" },
 ];
 
-const translations = {
+const translations: Record<Lang, Translation> = {
   en: {
     brand: "DALIN SHOPPING",
     subtitle: "ORDER TRACKING",
-    placeholder: "Enter order number (e.g., 215)",
-    trackBtn: "TRACK ORDER",
+    admin: "Admin",
+    adminName: "Dalin Admin",
+    dashboard: "Dashboard",
+    logout: "Logout",
+    themeLight: "Light mode",
+    themeDark: "Dark mode",
+    heroKicker: "UAE → Kurdistan · Private shopping route",
+    heroHeadline: "Track your order like a flight mission.",
+    heroDescription:
+      "From Shein purchase to Dubai handling and final delivery in Kurdistan, every stage is shown in one clean, private and beautiful tracking room.",
+    routeShein: "Shein",
+    routeDubai: "Dubai",
+    routeKurdistan: "Kurdistan",
+    metricStages: "active stages",
+    metricCode: "smart code",
+    metricSupport: "support ready",
+    terminalTitle: "Tracking Terminal",
+    liveLookup: "Live lookup",
+    placeholder: "Enter order number",
+    trackBtn: "Track Order",
+    searching: "Checking...",
+    idleTitle: "Enter your order code",
+    idleText: "You can write 215 or DS215. Both will open the same tracking record.",
+    privacyNote: "Customer details are partially hidden for privacy.",
+    notFound: "Order not found. Please check your number and try again.",
+    connectionError: "Connection error. Please try again.",
+    orderCode: "Order Code",
+    currentStage: "Current Stage",
+    completed: "Completed",
+    progress: "Progress",
+    expected: "Expected in this stage",
+    journey: "Journey Map",
     customerInfo: "Customer Name",
     phone: "Contact",
     items: "Total Items",
@@ -62,84 +152,68 @@ const translations = {
     deliveryFee: "Delivery Fee",
     totalAmount: "Total Amount",
     currencyIQD: "IQD",
-    notFound: "Order not found! Please verify your number.",
     printBtn: "Download PDF Receipt",
     titleMr: "Mr.",
     titleMiss: "Miss.",
-    estimatedDelivery: "Expected in this Stage",
-    delivered: "Delivered",
+    needHelp: "Need help with this order?",
+    whatsapp: "WhatsApp",
+    instagram: "Instagram",
+    waMessage: "Hello, I have a question regarding my order with code: ",
+    adminPasswordPrompt: "Please enter Admin Password:",
+    adminWrongPassword: "Incorrect password!",
     s0: "Order Placed",
-    s1: "Order Purchased",
     s2: "Preparing by Shein",
     s3: "Shipped to Dubai",
     s4: "Arrived in Dubai",
-    s5: "Waiting in Dubai",
-    s6: "On the way to Kurdistan", // Guncellendi
+    s6: "On the way to Kurdistan",
     s7: "Received & Packing",
     s8: "Out for Delivery",
-    s9: "Delivered", // Stage 9 Eklendi
-    time_s0: "Pending",
-    time_s1: "12 - 24 Hours",
-    time_s2: "1 - 3 Days",
-    time_s3: "6 - 10 Days",
-    time_s4: "1 - 2 Days",
-    time_s5: "1 - 2 Days",
-    time_s6: "6 - 7 Days",
-    time_s7: "1 Day",
-    time_s8_ku: "1 - 2 Days",
-    time_s8_ar: "2 - 3 Days",
-    time_s9: "Completed",
-    needHelp: "Need help with this order?",
-    waMessage: "Hello, I have a question regarding my order with code: "
-  },
-  ar: {
-    brand: "دالين للتسوق",
-    subtitle: "تتبع الطلب",
-    placeholder: "أدخل رقم الطلب (مثل 215)",
-    trackBtn: "تتبع الطلب",
-    customerInfo: "اسم العميل",
-    phone: "جهة الاتصال",
-    items: "إجمالي العناصر",
-    date: "تاريخ الطلب",
-    equals: "يساوي",
-    deliveryFee: "رسوم التوصيل",
-    totalAmount: "المبلغ الإجمالي",
-    currencyIQD: "دينار",
-    notFound: "الطلب غير موجود! يرجى التحقق من الرقم.",
-    printBtn: "تحميل وصل PDF", 
-    titleMr: "السيد",
-    titleMiss: "الآنسة",
-    estimatedDelivery: "الوقت المتوقع لهذه المرحلة",
-    delivered: "تم التوصيل",
-    s0: "تم الطلب",
-    s1: "تم شراء الطلب",
-    s2: "تجهيز بواسطة شي إن",
-    s3: "شحن إلى دبي",
-    s4: "وصل إلى دبي",
-    s5: "في الانتظار بدبي",
-    s6: "في الطريق إلى كردستان", // Guncellendi
-    s7: "تم الاستلام والتغليف",
-    s8: "في الطريق للتسليم",
-    s9: "تم التوصيل", // Stage 9 Eklendi
-    time_s0: "قيد الانتظار",
-    time_s1: "12 - 24 ساعة",
-    time_s2: "1 - 3 أيام",
-    time_s3: "6 - 10 أيام",
-    time_s4: "1 - 2 أيام",
-    time_s5: "1 - 2 أيام",
-    time_s6: "6 - 7 أيام",
-    time_s7: "يوم واحد",
-    time_s8_ku: "1 - 2 أيام",
-    time_s8_ar: "2 - 3 أيام",
-    time_s9: "مكتمل",
-    needHelp: "تحتاج مساعدة بخصوص هذا الطلب؟",
-    waMessage: "مرحباً، لدي استفسار حول طلبي برقم: "
+    s9: "Delivered",
+    time0: "Pending",
+    time2: "1 - 3 Days",
+    time3: "6 - 10 Days",
+    time4: "1 - 2 Days",
+    time6: "6 - 7 Days",
+    time7: "1 Day",
+    time8Ku: "1 - 2 Days",
+    time8Ar: "2 - 3 Days",
+    time9: "Completed",
   },
   ku: {
     brand: "دالین شۆپینگ",
     subtitle: "بەدواداچوونی داواکاری",
-    placeholder: "ژمارەی داواکاری بنووسە (وەک 215)",
+    admin: "ئەدمین",
+    adminName: "ئەدمینی دالین",
+    dashboard: "داشبۆرد",
+    logout: "چوونەدەرەوە",
+    themeLight: "ڕووناک",
+    themeDark: "تاریک",
+    heroKicker: "ئیمارات → کوردستان · ڕێگای تایبەتی شۆپینگ",
+    heroHeadline: "داواکارییەکەت وەک گەشتێکی فڕۆکە ببینە.",
+    heroDescription:
+      "لە کڕین لە شینەوە بۆ مامەڵەی دوبەی و گەیاندنی کۆتایی لە کوردستان، هەموو قۆناغەکان لە شوێنێکی جوان و تایبەتدا دەردەکەون.",
+    routeShein: "شین",
+    routeDubai: "دوبەی",
+    routeKurdistan: "کوردستان",
+    metricStages: "قۆناغی چالاک",
+    metricCode: "کۆدی زیرەک",
+    metricSupport: "یارمەتی ئامادەیە",
+    terminalTitle: "تێرمیناڵی بەدواداچوون",
+    liveLookup: "گەڕانی ڕاستەوخۆ",
+    placeholder: "ژمارەی داواکاری بنووسە",
     trackBtn: "گەڕان",
+    searching: "دەگەڕێت...",
+    idleTitle: "کۆدی داواکارییەکەت بنووسە",
+    idleText: "دەتوانیت 215 یان DS215 بنووسیت. هەردوو هەمان داواکاری دەکاتەوە.",
+    privacyNote: "زانیاری کڕیار بۆ پاراستنی تایبەتمەندی بەشێک شاراوەیە.",
+    notFound: "داواکاری نەدۆزرایەوە. تکایە ژمارەکە بپشکنە و دووبارە هەوڵبدە.",
+    connectionError: "کێشەی پەیوەندی. تکایە دووبارە هەوڵبدە.",
+    orderCode: "کۆدی داواکاری",
+    currentStage: "قۆناغی ئێستا",
+    completed: "تەواوبوو",
+    progress: "پێشکەوتن",
+    expected: "کاتی پێشبینیکراو بۆ ئەم قۆناغە",
+    journey: "نەخشەی گەشت",
     customerInfo: "ناوی کڕیار",
     phone: "پەیوەندی",
     items: "کۆی کاڵاکان",
@@ -148,61 +222,176 @@ const translations = {
     deliveryFee: "نرخی گەیاندن",
     totalAmount: "کۆی گشتی",
     currencyIQD: "دینار",
-    notFound: "داواکاری نەدۆزرایەوە! تکایە ژمارەکە بپشکنە.",
     printBtn: "داگرتنی وەسڵی PDF",
-    titleMr: "کاک", 
+    titleMr: "کاک",
     titleMiss: "خان",
-    estimatedDelivery: "کاتی پێشبینیکراو بۆ ئەم قۆناغە",
-    delivered: "گەیەنرا",
+    needHelp: "پێویستت بە یارمەتییە بۆ ئەم داواکارییە؟",
+    whatsapp: "واتساپ",
+    instagram: "ئینستاگرام",
+    waMessage: "سڵاو، پرسیارم هەیە دەربارەی داواکارییەکەم بە کۆدی: ",
+    adminPasswordPrompt: "وشەی نهێنی ئەدمین بنووسە:",
+    adminWrongPassword: "وشەی نهێنی هەڵەیە!",
     s0: "داواکاری کرا",
-    s1: "داواکاری کڕدرا",
     s2: "شین ئامادەی دەکات",
     s3: "نێردرا بۆ دوبەی",
     s4: "گەیشتە دوبەی",
-    s5: "لە دوبەی چاوەڕێ دەکات",
-    s6: "بەرەو کوردستان بەڕێکەوت", // Guncellendi
+    s6: "بەرەو کوردستان بەڕێکەوت",
     s7: "وەرگیرا و پاکەت دەکرێت",
     s8: "لە ڕێگایە بۆ گەیاندن",
-    s9: "گەیەنرا", // Stage 9 Eklendi
-    time_s0: "لە چاوەڕوانیدایە",
-    time_s1: "12 - 24 کاتژمێر",
-    time_s2: "1 - 3 ڕۆژ",
-    time_s3: "6 - 10 ڕۆژ",
-    time_s4: "1 - 2 ڕۆژ",
-    time_s5: "1 - 2 ڕۆژ",
-    time_s6: "6 - 7 ڕۆژ",
-    time_s7: "یەک ڕۆژ",
-    time_s8_ku: "1 - 2 ڕۆژ",
-    time_s8_ar: "2 - 3 ڕۆژ",
-    time_s9: "تەواوکراو",
-    needHelp: "پێویستت بە یارمەتییە بۆ ئەم داواکارییە؟",
-    waMessage: "سڵاو، پرسیارم هەیە دەربارەی داواکارییەکەم بە کۆدی: "
+    s9: "گەیەنرا",
+    time0: "لە چاوەڕوانیدایە",
+    time2: "1 - 3 ڕۆژ",
+    time3: "6 - 10 ڕۆژ",
+    time4: "1 - 2 ڕۆژ",
+    time6: "6 - 7 ڕۆژ",
+    time7: "یەک ڕۆژ",
+    time8Ku: "1 - 2 ڕۆژ",
+    time8Ar: "2 - 3 ڕۆژ",
+    time9: "تەواوکراو",
+  },
+  ar: {
+    brand: "دالين شوبينغ",
+    subtitle: "تتبع الطلب",
+    admin: "الإدارة",
+    adminName: "إدارة دالين",
+    dashboard: "لوحة التحكم",
+    logout: "تسجيل الخروج",
+    themeLight: "الوضع الفاتح",
+    themeDark: "الوضع الداكن",
+    heroKicker: "الإمارات → كردستان · مسار تسوق خاص",
+    heroHeadline: "تتبع طلبك كرحلة جوية منظمة.",
+    heroDescription:
+      "من الشراء من شي إن إلى تجهيز دبي ثم التسليم النهائي في كردستان، تظهر كل مرحلة في غرفة تتبع خاصة وواضحة وجميلة.",
+    routeShein: "شي إن",
+    routeDubai: "دبي",
+    routeKurdistan: "كردستان",
+    metricStages: "مراحل نشطة",
+    metricCode: "كود ذكي",
+    metricSupport: "الدعم جاهز",
+    terminalTitle: "محطة التتبع",
+    liveLookup: "بحث مباشر",
+    placeholder: "أدخل رقم الطلب",
+    trackBtn: "تتبع الطلب",
+    searching: "جاري الفحص...",
+    idleTitle: "أدخل كود طلبك",
+    idleText: "يمكنك كتابة 215 أو DS215. كلاهما يفتح نفس سجل التتبع.",
+    privacyNote: "يتم إخفاء بعض بيانات العميل للحفاظ على الخصوصية.",
+    notFound: "لم يتم العثور على الطلب. يرجى التأكد من الرقم والمحاولة مرة أخرى.",
+    connectionError: "حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.",
+    orderCode: "كود الطلب",
+    currentStage: "المرحلة الحالية",
+    completed: "مكتمل",
+    progress: "التقدم",
+    expected: "الوقت المتوقع لهذه المرحلة",
+    journey: "خريطة الرحلة",
+    customerInfo: "اسم العميل",
+    phone: "جهة الاتصال",
+    items: "إجمالي العناصر",
+    date: "تاريخ الطلب",
+    equals: "يساوي",
+    deliveryFee: "رسوم التوصيل",
+    totalAmount: "المبلغ الإجمالي",
+    currencyIQD: "دينار",
+    printBtn: "تحميل وصل PDF",
+    titleMr: "السيد",
+    titleMiss: "الآنسة",
+    needHelp: "تحتاج مساعدة بخصوص هذا الطلب؟",
+    whatsapp: "واتساب",
+    instagram: "إنستغرام",
+    waMessage: "مرحباً، لدي استفسار حول طلبي برقم: ",
+    adminPasswordPrompt: "يرجى إدخال كلمة مرور الإدارة:",
+    adminWrongPassword: "كلمة المرور غير صحيحة!",
+    s0: "تم الطلب",
+    s2: "تجهيز بواسطة شي إن",
+    s3: "شحن إلى دبي",
+    s4: "وصل إلى دبي",
+    s6: "في الطريق إلى كردستان",
+    s7: "تم الاستلام والتغليف",
+    s8: "في الطريق للتسليم",
+    s9: "تم التوصيل",
+    time0: "قيد الانتظار",
+    time2: "1 - 3 أيام",
+    time3: "6 - 10 أيام",
+    time4: "1 - 2 أيام",
+    time6: "6 - 7 أيام",
+    time7: "يوم واحد",
+    time8Ku: "1 - 2 أيام",
+    time8Ar: "2 - 3 أيام",
+    time9: "مكتمل",
   },
 };
+
+const ADMIN_PASSWORD = "dalin1998";
+const WHATSAPP_NUMBER = "9647517363196";
+const INSTAGRAM_URL = "https://instagram.com/dalin.shoping";
+const activeStatusValues: StatusValue[] = [0, 2, 3, 4, 6, 7, 8, 9];
+const statusIconMap: Record<StatusValue, string> = {
+  0: "🧾",
+  2: "🧵",
+  3: "✈️",
+  4: "🏙️",
+  6: "🚚",
+  7: "📦",
+  8: "🛵",
+  9: "✓",
+};
+
+function normalizeTrackingCode(value: string) {
+  const numbersOnly = value.trim().toUpperCase().replace(/^DS/, "").replace(/\D/g, "");
+  return numbersOnly ? `DS${numbersOnly}` : "";
+}
+
+function normalizeActiveStatus(value?: number | string): StatusValue {
+  const numeric = Number(value ?? 0);
+  if (numeric === 1) return 2;
+  if (numeric === 5) return 6;
+  if (activeStatusValues.includes(numeric as StatusValue)) return numeric as StatusValue;
+  if (numeric >= 9) return 9;
+  return 0;
+}
+
+function formatMoney(value?: number) {
+  return Number(value ?? 0).toLocaleString();
+}
 
 export default function OrderTracking() {
   const [orderCode, setOrderCode] = useState("");
   const [orderData, setOrderData] = useState<TrackingOrder | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [trackError, setTrackError] = useState("");
-  const [theme, setTheme] = useState("dark"); 
+  const [theme, setTheme] = useState<Theme>("dark");
   const [lang, setLang] = useState<Lang>("en");
-  
   const [isLangOpen, setIsLangOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("dalinIsAdmin") === "true" : false
+  );
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  const adminName = "Dalin Admin";
-
   const t = translations[lang];
-  const statusLabels = [t.s0, t.s1, t.s2, t.s3, t.s4, t.s5, t.s6, t.s7, t.s8, t.s9];
+  const isRtl = lang === "ar" || lang === "ku";
+  const activeStatus = normalizeActiveStatus(orderData?.status);
+  const activeIndex = activeStatusValues.indexOf(activeStatus);
+  const progressPercent = orderData ? Math.round((activeIndex / (activeStatusValues.length - 1)) * 100) : 0;
+  const orderTotal = Number(orderData?.amountIQD ?? 0) + Number(orderData?.shippingIQD ?? 0);
+
+  const statusSteps = useMemo(
+    () => [
+      { value: 0 as StatusValue, label: t.s0, time: t.time0, code: "01" },
+      { value: 2 as StatusValue, label: t.s2, time: t.time2, code: "02" },
+      { value: 3 as StatusValue, label: t.s3, time: t.time3, code: "03" },
+      { value: 4 as StatusValue, label: t.s4, time: t.time4, code: "04" },
+      { value: 6 as StatusValue, label: t.s6, time: t.time6, code: "05" },
+      { value: 7 as StatusValue, label: t.s7, time: t.time7, code: "06" },
+      { value: 8 as StatusValue, label: t.s8, time: (orderData?.customerLang || "ku") === "ku" ? t.time8Ku : t.time8Ar, code: "07" },
+      { value: 9 as StatusValue, label: t.s9, time: t.time9, code: "08" },
+    ],
+    [orderData?.customerLang, t]
+  );
+
+  const currentStep = statusSteps.find((step) => step.value === activeStatus) ?? statusSteps[0];
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    if (localStorage.getItem("dalinIsAdmin") === "true") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsAdmin(true);
-    }
   }, [theme]);
 
   useEffect(() => {
@@ -211,19 +400,14 @@ export default function OrderTracking() {
         setIsLangOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
 
-  const normalizeTrackingCode = (value: string) => {
-    const numbersOnly = value.trim().toUpperCase().replace(/^DS/, "").replace(/\D/g, "");
-    return numbersOnly ? `DS${numbersOnly}` : "";
-  };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleTrack = async () => {
     const finalCode = normalizeTrackingCode(orderCode);
+
     if (!finalCode) {
       setTrackError(t.notFound);
       setOrderData(null);
@@ -232,35 +416,46 @@ export default function OrderTracking() {
 
     setIsTracking(true);
     setTrackError("");
-    
+
     try {
       const docRef = doc(db, "orders", finalCode);
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
-        setOrderData({ id: docSnap.id, ...(docSnap.data() as Omit<TrackingOrder, "id">) }); 
+        const nextOrder = { id: docSnap.id, ...(docSnap.data() as Omit<TrackingOrder, "id">) };
+        if (nextOrder._deletedAt) {
+          setOrderData(null);
+          setTrackError(t.notFound);
+        } else {
+          setOrderData(nextOrder);
+        }
       } else {
         setOrderData(null);
         setTrackError(t.notFound);
       }
     } catch (error) {
-      console.error("Arama Hatasi:", error);
+      console.error("Tracking error:", error);
       setOrderData(null);
-      setTrackError("Connection error. Please try again.");
+      setTrackError(t.connectionError);
     } finally {
       setIsTracking(false);
     }
   };
 
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+  const handleCodeChange = (value: string) => {
+    setOrderCode(value.toUpperCase().replace(/^DS/, "").replace(/[^0-9]/g, ""));
+    setTrackError("");
+  };
+
+  const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
 
   const handleAdminLogin = () => {
-    const password = prompt("Please enter Admin Password:");
-    if (password === "dalin1998") { 
+    const password = prompt(t.adminPasswordPrompt);
+    if (password === ADMIN_PASSWORD) {
       setIsAdmin(true);
       localStorage.setItem("dalinIsAdmin", "true");
     } else if (password) {
-      alert("Incorrect password!");
+      alert(t.adminWrongPassword);
     }
   };
 
@@ -271,401 +466,233 @@ export default function OrderTracking() {
 
   const renderCustomerName = () => {
     if (!orderData) return "";
-    
-    const displayName = (isAdmin && orderData._realName) 
-      ? orderData._realName 
-      : `${orderData.nameFirstLetter}*** ${orderData.nameLastLetter}`;
 
-    const isMiss = orderData.title === "Miss";
-    
-    if (lang === "ku") {
-      if (isMiss) return <>{displayName} <strong style={{ opacity: 1, color: "var(--primary)" }}>{t.titleMiss}</strong></>;
-      return <><strong style={{ opacity: 1, color: "var(--primary)" }}>{t.titleMr}</strong> {displayName}</>;
-    } else {
-      const translatedTitle = isMiss ? t.titleMiss : t.titleMr;
-      return <><strong style={{ opacity: 1, color: "var(--primary)" }}>{translatedTitle}</strong> {displayName}</>;
+    const displayName = isAdmin && orderData._realName
+      ? orderData._realName
+      : `${orderData.nameFirstLetter ?? ""}*** ${orderData.nameLastLetter ?? ""}`.trim();
+
+    const translatedTitle = orderData.title === "Miss" ? t.titleMiss : t.titleMr;
+
+    if (lang === "ku" && orderData.title === "Miss") {
+      return <>{displayName} <strong>{translatedTitle}</strong></>;
     }
+
+    return <><strong>{translatedTitle}</strong> {displayName}</>;
   };
 
   const renderPhoneNumber = () => {
     if (!orderData) return "";
-    
-    if (isAdmin && orderData._realPhone) {
-      return <span style={{ color: "var(--primary)" }}>{orderData._realPhone}</span>;
-    }
-    
-    return `+964 ${orderData.phoneNetwork} ${orderData.phoneFirst}** **${orderData.phoneLast}`;
+    if (isAdmin && orderData._realPhone) return orderData._realPhone;
+    return `+964 ${orderData.phoneNetwork ?? ""} ${orderData.phoneFirst ?? ""}** **${orderData.phoneLast ?? ""}`;
   };
 
-  const handleDownloadPDF = () => {
-    window.print();
-  };
-
-  const getDeliveryTime = () => {
-    if (!orderData) return "";
-    const st = orderData.status;
-    const custLang = orderData.customerLang || "ku";
-
-    if (st === 0) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s0}</span>;
-    if (st === 1) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s1}</span>;
-    if (st === 2) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s2}</span>;
-    if (st === 3) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s3}</span>;
-    if (st === 4) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s4}</span>;
-    if (st === 5) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s5}</span>;
-    if (st === 6) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s6}</span>;
-    if (st === 7) return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s7}</span>;
-    
-    if (st === 8) {
-      if (custLang === "ku") return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s8_ku}</span>;
-      return <span style={{ color: "var(--text-main)", fontWeight: "bold" }}>⏳ {t.time_s8_ar}</span>;
-    }
-
-    // STAGE 9 EKLENDİ
-    if (st === 9) {
-      return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>✅ {t.time_s9}</span>;
-    }
-
-    return <span style={{ color: "var(--primary)", fontWeight: "bold" }}>✅ {t.delivered}</span>;
-  };
-
-  const getProgressWidth = () => {
-    if (!orderData) return "0%";
-    const percentage = (orderData.status / 9) * 100; // 8 yerine 9 yazıldı
-    return `${percentage}%`;
+  const openWhatsapp = () => {
+    if (!orderData) return;
+    const message = encodeURIComponent(`${t.waMessage}${orderData.id}`);
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, "_blank", "noopener,noreferrer");
   };
 
   return (
-    <div className="main-wrapper" dir={lang === "ar" || lang === "ku" ? "rtl" : "ltr"}>
-      
-      <div className="top-controls">
-        
+    <main className="home-shell" dir={isRtl ? "rtl" : "ltr"}>
+      <div className="ambient ambient-one" aria-hidden="true" />
+      <div className="ambient ambient-two" aria-hidden="true" />
+
+      <div className="home-controls" dir="ltr">
         {!isAdmin ? (
-          <button onClick={handleAdminLogin} className="control-btn" style={{ width: "auto", padding: "0 15px", gap: "5px", fontSize: "12px", fontWeight: "bold" }}>
-            <span style={{ fontSize: "14px" }}>🔒</span> Admin
+          <button onClick={handleAdminLogin} className="home-control-button admin-login" type="button">
+            <span>🔒</span>
+            <b>{t.admin}</b>
           </button>
         ) : (
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", background: "rgba(16, 185, 129, 0.1)", padding: "0 10px", borderRadius: "20px", border: "1px solid var(--primary)" }}>
-            <span style={{ fontSize: "12px", fontWeight: "900", color: "var(--primary)", whiteSpace: "nowrap" }}>👤 {adminName}</span>
-            <div style={{ width: "1px", height: "15px", background: "var(--primary)", opacity: 0.3 }}></div>
-            
-            <a href="/admin" className="control-btn" style={{ width: "auto", padding: "0 10px", gap: "5px", fontSize: "12px", fontWeight: "bold", textDecoration: "none", background: "transparent", border: "none", boxShadow: "none" }} title="Go to Dashboard">
-              ⚙️
-            </a>
-            
-            <button onClick={handleAdminLogout} className="control-btn" style={{ width: "auto", padding: "0 10px", gap: "5px", fontSize: "12px", fontWeight: "bold", background: "transparent", border: "none", boxShadow: "none" }} title="Logout">
-              🔓
-            </button>
+          <div className="admin-session">
+            <span>{t.adminName}</span>
+            <a href="/admin" title={t.dashboard}>⚙️</a>
+            <button onClick={handleAdminLogout} type="button" title={t.logout}>🔓</button>
           </div>
         )}
 
-        <div className="control-divider"></div>
-
-        <div ref={dropdownRef} className={`custom-dropdown ${isLangOpen ? 'open' : ''}`}>
-          <div className="dropdown-header" onClick={() => setIsLangOpen(!isLangOpen)}>
-            {languageOptions.find(l => l.code === lang)?.label}
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </div>
-          
+        <div ref={dropdownRef} className={`language-switch ${isLangOpen ? "is-open" : ""}`}>
+          <button className="language-trigger" onClick={() => setIsLangOpen((open) => !open)} type="button">
+            <span>{languageOptions.find((option) => option.code === lang)?.label}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
           {isLangOpen && (
-            <div className="dropdown-list fade-content">
-              {languageOptions.map((opt) => (
-                <div 
-                  key={opt.code} 
-                  className={`dropdown-item ${lang === opt.code ? 'active' : ''}`}
+            <div className="language-menu">
+              {languageOptions.map((option) => (
+                <button
+                  key={option.code}
+                  type="button"
+                  className={option.code === lang ? "active" : ""}
                   onClick={() => {
-                    setLang(opt.code);
+                    setLang(option.code);
                     setIsLangOpen(false);
                   }}
                 >
-                  {opt.label}
-                </div>
+                  {option.label}
+                </button>
               ))}
             </div>
           )}
         </div>
-        
-        <div className="control-divider"></div>
-        <button onClick={toggleTheme} className="control-btn">
+
+        <button onClick={toggleTheme} className="home-control-button theme-button" type="button" title={theme === "dark" ? t.themeLight : t.themeDark}>
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
       </div>
 
-      <div className="tracking-layout">
-        <section className="tracking-hero command-hero">
-          <div className="hero-orbit" aria-hidden="true">
-            <div className="orbit-ring ring-one"></div>
-            <div className="orbit-ring ring-two"></div>
-            <div className="orbit-node node-dubai">DXB</div>
-            <div className="orbit-node node-erbil">EBL</div>
-            <div className="orbit-plane">✈</div>
-          </div>
+      <section className="home-stage">
+        <div className="hero-board">
+          <div className="hero-glass-line" aria-hidden="true" />
+          <div className="logo-mark">DS</div>
+          <div className="hero-kicker">{t.heroKicker}</div>
 
-          <div className="hero-copy">
-            <div className="hero-logo">DS</div>
-            <span className="hero-kicker">UAE → Kurdistan · Order Command</span>
-            <h1 className="brand-title">{t.brand}</h1>
-            <p className="brand-subtitle">{t.subtitle}</p>
-            <p className="hero-description">A private tracking room for your shopping journey: purchase, Dubai handling, air freight and final delivery in one clean view.</p>
-            <div className="route-strip" aria-label="Delivery route">
-              <span>Shein</span>
-              <b></b>
-              <span>Dubai</span>
-              <b></b>
-              <span>Kurdistan</span>
+          <div className="flight-hub" aria-hidden="true">
+            <div className="flight-orbit">
+              <span className="flight-plane">✈</span>
+              <span className="orbit-dot orbit-dot-one" />
+              <span className="orbit-dot orbit-dot-two" />
             </div>
           </div>
 
-          <div className="hero-metrics" aria-hidden="true">
-            <div><strong>09</strong><span>tracking stages</span></div>
-            <div><strong>DS</strong><span>smart order code</span></div>
-            <div><strong>WA</strong><span>support ready</span></div>
+          <div className="route-card" aria-label="Shopping route">
+            <span>{t.routeShein}</span>
+            <i />
+            <span>{t.routeDubai}</span>
+            <i />
+            <span>{t.routeKurdistan}</span>
           </div>
-        </section>
 
-        <section className="tracking-panel terminal-panel">
-          <div className="glass-card terminal-card">
-            <div className="terminal-topline">
-              <span className="terminal-dot"></span>
-              <span>Enter your Dalin code</span>
-              <em>Live lookup</em>
-            </div>
-        
-        <div className="search-container">
-          <div className="search-input-wrapper" dir="ltr">
-            <span className="search-prefix">DS</span>
-            <input 
-              type="text" 
-              placeholder={t.placeholder}
-              value={orderCode}
-              onChange={(e) => {
-                const val = e.target.value.toUpperCase().replace(/^DS/, "").replace(/[^0-9]/g, "");
-                setOrderCode(val);
-                setTrackError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleTrack();
-              }}
-              className="search-inner-input"
-            />
+          <div className="hero-stats">
+            <div><strong>08</strong><span>{t.metricStages}</span></div>
+            <div><strong>DS</strong><span>{t.metricCode}</span></div>
+            <div><strong>24/7</strong><span>{t.metricSupport}</span></div>
           </div>
-          <button onClick={handleTrack} className="search-btn" disabled={isTracking}>
-            {isTracking ? "..." : t.trackBtn}
-          </button>
         </div>
 
-        {trackError && (
-          <div className="tracking-error fade-content">
-            {trackError}
-          </div>
-        )}
-
-        {orderData && (
-          <div key={lang} className={`fade-content ${orderData.status === 9 ? 'stage9-active' : ''}`} style={{ position: "relative", overflow: "hidden", minHeight: "400px" }}>
-            
-            {/* STAGE 9 İÇİN ÖZEL CSS VE ŞEFFAF TİK EFEKTİ */}
-            <style>{`
-              .stage9-active * {
-                color: #059669 !important;
-                border-color: rgba(5, 150, 105, 0.3) !important;
-              }
-              .stage9-bg-tick {
-                position: absolute;
-                top: 45%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                font-size: 400px;
-                color: rgba(5, 150, 105, 0.05) !important;
-                z-index: 0;
-                pointer-events: none;
-                line-height: 1;
-              }
-            `}</style>
-
-            {orderData.status === 9 && (
-              <div className="stage9-bg-tick">✓</div>
-            )}
-            
-            <div style={{ position: "relative", zIndex: 1 }}>
-              <div style={{ textAlign: "center", marginBottom: "20px" }}>
-                <div style={{ display: "inline-block", background: "var(--widget-bg)", padding: "10px 25px", borderRadius: "15px", border: "1px solid var(--glass-border)", boxShadow: "0 4px 15px rgba(0,0,0,0.05)" }}>
-                  <span style={{ fontSize: "14px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "2px", fontWeight: "bold", marginRight: "10px" }}>Order Code:</span>
-                  <span style={{ fontSize: "1.2rem", fontWeight: "900", color: "var(--primary)", letterSpacing: "3px" }} dir="ltr">
-                    {orderData.id}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ maxWidth: "500px", margin: "0 auto 40px auto", textAlign: "center" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "13px" }}>
-                  <span style={{ color: "var(--text-muted)", fontWeight: "bold", textTransform: "uppercase" }}>{t.estimatedDelivery}</span>
-                  {getDeliveryTime()}
-                </div>
-                <div style={{ height: "8px", background: "var(--glass-border)", borderRadius: "10px", overflow: "hidden" }}>
-                  <div style={{ height: "100%", background: "var(--primary)", width: getProgressWidth(), transition: "width 1s ease-in-out", boxShadow: "0 0 10px rgba(16,185,129,0.5)" }}></div>
-                </div>
-              </div>
-
-              <div className="timeline-window">
-                <div className="timeline-line-bg"></div>
-                
-                {orderData.status > 0 ? (
-                  <div className="step-box prev">
-                    <div className="icon-circle">
-                      <div className="checkmark">✓</div>
-                      {animationsList[orderData.status - 1] ? (
-                        <Lottie animationData={animationsList[orderData.status - 1]} loop={false} style={{ width: 40, height: 40 }} />
-                      ) : (
-                        <span style={{ fontSize: "24px" }}>✅</span>
-                      )}
-                    </div>
-                    <span className="step-label">{statusLabels[orderData.status - 1]}</span>
-                  </div>
-                ) : (
-                  <div className="step-box empty"></div>
-                )}
-
-                <div className="step-box curr">
-                  <div className="icon-circle">
-                    {orderData.status === 9 ? (
-                      <span style={{ fontSize: "40px" }}>✅</span>
-                    ) : (
-                      <Lottie animationData={animationsList[orderData.status]} loop={true} style={{ width: 60, height: 60 }} />
-                    )}
-                  </div>
-                  <span className="step-label" style={{ fontWeight: orderData.status === 9 ? "bold" : "normal" }}>
-                    {statusLabels[orderData.status]}
-                  </span>
-                </div>
-
-                {orderData.status < 9 ? (
-                  <div className="step-box next">
-                    <div className="icon-circle">
-                      {animationsList[orderData.status + 1] ? (
-                        <Lottie animationData={animationsList[orderData.status + 1]} loop={false} style={{ width: 40, height: 40 }} />
-                      ) : (
-                        <span style={{ fontSize: "24px", color: "gray" }}>✅</span>
-                      )}
-                    </div>
-                    <span className="step-label">{statusLabels[orderData.status + 1]}</span>
-                  </div>
-                ) : (
-                  <div className="step-box empty"></div>
-                )}
-              </div>
-
-              <div className="info-grid">
-                
-                <div className="widget">
-                  <div className="info-row">
-                    <div>
-                      <div className="info-label">{t.customerInfo}</div>
-                      <div className="info-value" style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-                        {renderCustomerName()}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
-                      <div className="info-label">{t.phone}</div>
-                      <div className="info-value" dir="ltr">
-                        {renderPhoneNumber()}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <hr style={{ borderTop: '1px solid var(--glass-border)', margin: '15px 0' }} />
-                  
-                  <div className="info-row">
-                    <div>
-                      <div className="info-label">{t.date}</div>
-                      <div className="info-value">{orderData.date}</div>
-                    </div>
-                    <div style={{ textAlign: lang === 'en' ? 'right' : 'left' }}>
-                      <div className="info-label">{t.items}</div>
-                      <div className="info-value">{orderData.items}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="widget price-widget">
-                  <div className="price-usd">${orderData.amountUSD}</div>
-                  
-                  <div className="price-calc-row">
-                    <span>{t.equals}</span>
-                    <span>{orderData.amountIQD.toLocaleString()} {t.currencyIQD}</span>
-                  </div>
-                  
-                  <div className="price-calc-row price-delivery">
-                    <span>{t.deliveryFee}</span>
-                    <span>+{orderData.shippingIQD.toLocaleString()} {t.currencyIQD}</span>
-                  </div>
-                  
-                  <hr className="price-divider" />
-                  
-                  <div className="price-total">
-                    <span>{t.totalAmount}</span>
-                    <span>{(orderData.amountIQD + orderData.shippingIQD).toLocaleString()} {t.currencyIQD}</span>
-                  </div>
-                </div>
-
-              </div>
-
-              <button onClick={handleDownloadPDF} className="print-receipt-btn">
-                <span>📄</span> {t.printBtn}
-              </button>
-
-              {/* YENİ EKLENEN İLETİŞİM BÖLÜMÜ */}
-              <div style={{ marginTop: "25px", paddingTop: "20px", borderTop: "1px solid var(--glass-border)" }}>
-                <p style={{ textAlign: "center", fontSize: "14px", color: "var(--text-muted)", marginBottom: "15px", fontWeight: "bold" }}>
-                  {t.needHelp}
-                </p>
-                <div style={{ display: "flex", justifyContent: "center", gap: "15px", flexWrap: "wrap" }}>
-                  
-                  {/* WhatsApp Butonu */}
-                  <button 
-                    onClick={() => {
-                      const phoneNumber = "9647517363196"; 
-                      const message = encodeURIComponent(`${t.waMessage}${orderData.id}`);
-                      window.open(`https://wa.me/${phoneNumber}?text=${message}`, '_blank');
-                    }} 
-                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 20px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #25D366, #128C7E)", color: "white", fontWeight: "bold", cursor: "pointer", fontSize: "14px", boxShadow: "0 4px 15px rgba(37, 211, 102, 0.3)", transition: "transform 0.2s" }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
-                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
-                  >
-                    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.383 0 0 5.383 0 12.031c0 2.124.553 4.195 1.604 6.01L.063 23.94l6.046-1.584A11.96 11.96 0 0 0 12.031 24c6.648 0 12.031-5.383 12.031-12.031S18.679 0 12.031 0zm0 21.996c-1.802 0-3.567-.485-5.115-1.403l-.367-.218-3.799.996.996-3.799-.218-.367c-.918-1.548-1.403-3.313-1.403-5.115 0-5.546 4.514-10.06 10.06-10.06 5.546 0 10.06 4.514 10.06 10.06 0 5.546-4.514 10.06-10.06 10.06zm5.524-7.534c-.303-.152-1.793-.886-2.071-.987-.278-.101-.48-.152-.682.152-.202.303-.783.987-.96 1.189-.177.202-.354.227-.657.076-1.353-.687-2.457-1.442-3.411-3.056-.202-.34-.025-.525.126-.676.136-.136.303-.354.455-.53.152-.177.202-.303.303-.505.101-.202.051-.38-.025-.531-.076-.152-.682-1.641-.934-2.247-.247-.591-.499-.51-.682-.52-.177-.01-.38-.01-.581-.01-.202 0-.53.076-.808.38-.278.303-1.061 1.035-1.061 2.525 0 1.49 1.086 2.93 1.237 3.132.152.202 2.134 3.258 5.166 4.566 2.062.89 2.658.747 3.143.626.687-.17 1.793-.732 2.046-1.44.253-.708.253-1.314.177-1.44-.076-.126-.278-.202-.581-.354z"/></svg>
-                    WhatsApp
-                  </button>
-                  
-                  {/* Instagram Butonu */}
-                  <button 
-                    onClick={() => window.open('https://instagram.com/dalin.shoping', '_blank')} 
-                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 20px", borderRadius: "12px", border: "none", background: "linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)", color: "white", fontWeight: "bold", cursor: "pointer", fontSize: "14px", boxShadow: "0 4px 15px rgba(220, 39, 67, 0.3)", transition: "transform 0.2s" }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
-                    onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
-                  >
-                    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
-                    Instagram
-                  </button>
-                </div>
-              </div>
-              {/* İLETİŞİM BÖLÜMÜ SONU */}
-
+        <div className="tracking-card">
+          <div className="terminal-header">
+            <div>
+              <span className="status-light" />
+              <strong>{t.terminalTitle}</strong>
             </div>
+            <em>{t.liveLookup}</em>
           </div>
-        )}
 
-            {!orderData && !trackError && (
-              <div className="empty-tracking-hint">
-                <div className="hint-map" aria-hidden="true">
-                  <span>01</span><i></i><span>05</span><i></i><span>09</span>
-                </div>
-                <strong>Enter your order number</strong>
-                <span>You can write 215 or DS215. The system will find the same order.</span>
-              </div>
-            )}
+          <div className="search-panel" dir="ltr">
+            <label className="code-input-box">
+              <span>DS</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder={t.placeholder}
+                value={orderCode}
+                onChange={(event) => handleCodeChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handleTrack();
+                }}
+              />
+            </label>
+            <button onClick={handleTrack} disabled={isTracking} className="track-button" type="button">
+              {isTracking ? t.searching : t.trackBtn}
+            </button>
           </div>
-        </section>
-      </div>
-    </div>
+
+          {trackError && <div className="home-error">{trackError}</div>}
+
+          {!orderData && !trackError && (
+            <div className="idle-panel">
+              <div className="mini-route" aria-hidden="true">
+                <span>01</span><i /><span>04</span><i /><span>08</span>
+              </div>
+              <strong>{t.idleTitle}</strong>
+              <p>{t.idleText}</p>
+              <small>{t.privacyNote}</small>
+            </div>
+          )}
+
+          {orderData && (
+            <section className="result-panel">
+              <div className="result-top">
+                <div>
+                  <span>{t.orderCode}</span>
+                  <strong dir="ltr">{orderData.id}</strong>
+                </div>
+                <div>
+                  <span>{t.currentStage}</span>
+                  <strong>{currentStep.label}</strong>
+                </div>
+              </div>
+
+              <div className="current-stage-card">
+                <div className={`stage-icon-badge ${activeStatus === 9 ? "delivered" : ""}`} aria-hidden="true">
+                  {statusIconMap[activeStatus]}
+                </div>
+                <div className="stage-copy">
+                  <span>{t.expected}</span>
+                  <h2>{currentStep.time}</h2>
+                  <p>{t.progress}: {progressPercent}% {activeStatus === 9 ? `· ${t.completed}` : ""}</p>
+                </div>
+              </div>
+
+              <div className="progress-track" aria-label={t.progress}>
+                <div style={{ width: `${progressPercent}%` }} />
+              </div>
+
+              <div className="journey-title">{t.journey}</div>
+              <div className="stage-grid">
+                {statusSteps.map((step) => {
+                  const stepIndex = activeStatusValues.indexOf(step.value);
+                  const isDone = stepIndex < activeIndex;
+                  const isCurrent = step.value === activeStatus;
+                  return (
+                    <div key={step.value} className={`stage-tile ${isDone ? "done" : ""} ${isCurrent ? "current" : ""}`}>
+                      <span>{isDone ? "✓" : statusIconMap[step.value]}</span>
+                      <strong>{step.label}</strong>
+                      <small>{step.time}</small>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="details-grid">
+                <div className="detail-card customer-card">
+                  <div className="detail-row">
+                    <span>{t.customerInfo}</span>
+                    <strong>{renderCustomerName()}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span>{t.phone}</span>
+                    <strong dir="ltr">{renderPhoneNumber()}</strong>
+                  </div>
+                  <div className="detail-row two-col">
+                    <div>
+                      <span>{t.date}</span>
+                      <strong>{orderData.date || "-"}</strong>
+                    </div>
+                    <div>
+                      <span>{t.items}</span>
+                      <strong>{orderData.items ?? 0}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="detail-card price-card">
+                  <div className="usd-price">${formatMoney(orderData.amountUSD)}</div>
+                  <div className="price-line"><span>{t.equals}</span><strong>{formatMoney(orderData.amountIQD)} {t.currencyIQD}</strong></div>
+                  <div className="price-line"><span>{t.deliveryFee}</span><strong>+{formatMoney(orderData.shippingIQD)} {t.currencyIQD}</strong></div>
+                  <div className="price-total"><span>{t.totalAmount}</span><strong>{formatMoney(orderTotal)} {t.currencyIQD}</strong></div>
+                </div>
+              </div>
+
+              <div className="action-row">
+                <button onClick={() => window.print()} className="secondary-action" type="button">📄 {t.printBtn}</button>
+                <button onClick={openWhatsapp} className="whatsapp-action" type="button">{t.whatsapp}</button>
+                <button onClick={() => window.open(INSTAGRAM_URL, "_blank", "noopener,noreferrer")} className="instagram-action" type="button">{t.instagram}</button>
+              </div>
+            </section>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }

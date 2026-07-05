@@ -48,6 +48,14 @@ type StatusOption = {
   tone: string;
 };
 
+type SelectValue = string | number;
+
+type SelectItem = {
+  value: SelectValue;
+  label: string;
+  tone?: string;
+};
+
 const ADMIN_PASSWORD = "dalin1998";
 
 const STATUS_OPTIONS: StatusOption[] = [
@@ -59,6 +67,43 @@ const STATUS_OPTIONS: StatusOption[] = [
   { value: 7, label: "7 - Received & Packing", shortLabel: "7 Packing", tone: "indigo" },
   { value: 8, label: "8 - Out for Delivery", shortLabel: "8 Delivery", tone: "green" },
   { value: 9, label: "9 - Delivered", shortLabel: "9 Delivered", tone: "emerald" },
+];
+
+const TITLE_OPTIONS: SelectItem[] = [
+  { value: "Mr", label: "Mr" },
+  { value: "Miss", label: "Miss" },
+];
+
+const LANGUAGE_OPTIONS: SelectItem[] = [
+  { value: "ku", label: "Kurdish" },
+  { value: "ar", label: "Arabic" },
+];
+
+const RATE_OPTIONS: SelectItem[] = [
+  { value: 1200, label: "1200" },
+  { value: 1190, label: "1190" },
+];
+
+const DELIVERY_OPTIONS: SelectItem[] = [
+  { value: 5000, label: "5000" },
+  { value: 0, label: "Free" },
+];
+
+const STATUS_SELECT_OPTIONS: SelectItem[] = STATUS_OPTIONS.map((status) => ({
+  value: status.value,
+  label: status.label,
+  tone: status.tone,
+}));
+
+const STATUS_SELECT_COMPACT_OPTIONS: SelectItem[] = STATUS_OPTIONS.map((status) => ({
+  value: status.value,
+  label: status.shortLabel,
+  tone: status.tone,
+}));
+
+const FILTER_STATUS_OPTIONS: SelectItem[] = [
+  { value: "all", label: "All Status" },
+  ...STATUS_SELECT_OPTIONS,
 ];
 
 const STATUS_LABELS: Record<number, string> = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item.label]));
@@ -136,15 +181,73 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function StatusOptions({ compact = false }: { compact?: boolean }) {
+function CustomSelect({
+  id,
+  value,
+  options,
+  onChange,
+  openSelectId,
+  setOpenSelectId,
+  className = "",
+  menuTitle = "Choose option",
+}: {
+  id: string;
+  value: SelectValue;
+  options: SelectItem[];
+  onChange: (value: SelectValue) => void;
+  openSelectId: string | null;
+  setOpenSelectId: React.Dispatch<React.SetStateAction<string | null>>;
+  className?: string;
+  menuTitle?: string;
+}) {
+  const isOpen = openSelectId === id;
+  const current = options.find((option) => String(option.value) === String(value)) || options[0];
+
   return (
-    <>
-      {STATUS_OPTIONS.map((status) => (
-        <option key={status.value} value={status.value}>
-          {compact ? status.shortLabel : status.label}
-        </option>
-      ))}
-    </>
+    <div className={`custom-select ${isOpen ? "is-open" : ""}`}>
+      <button
+        type="button"
+        className={`custom-select-trigger ${className}`.trim()}
+        onClick={() => setOpenSelectId(isOpen ? null : id)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span>{current?.label}</span>
+        <span className="select-arrow">⌄</span>
+      </button>
+
+      {isOpen && (
+        <div className="select-popover-backdrop" onMouseDown={() => setOpenSelectId(null)}>
+          <div className="select-popover" onMouseDown={(event) => event.stopPropagation()} role="listbox" aria-label={menuTitle}>
+            <div className="select-popover-head">
+              <strong>{menuTitle}</strong>
+              <button type="button" onClick={() => setOpenSelectId(null)} aria-label="Close options">×</button>
+            </div>
+            <div className="select-option-list">
+              {options.map((option) => {
+                const active = String(option.value) === String(value);
+                return (
+                  <button
+                    key={`${id}-${option.value}`}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={`select-option ${active ? "active" : ""} ${option.tone || ""}`.trim()}
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpenSelectId(null);
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    {active && <b>✓</b>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -163,6 +266,7 @@ export default function AdminPanel() {
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState(0);
   const [exchangeRate, setExchangeRate] = useState(1200);
+  const [openSelectId, setOpenSelectId] = useState<string | null>(null);
   const [isIqdDriving, setIsIqdDriving] = useState(false);
   const [formData, setFormData] = useState<FormData>(makeEmptyForm());
 
@@ -253,8 +357,12 @@ export default function AdminPanel() {
     localStorage.removeItem("adminAuth");
   }
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleFormSelect(name: keyof FormData, value: SelectValue) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
@@ -276,8 +384,8 @@ export default function AdminPanel() {
     }
   }
 
-  function handleRateChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const rate = Number(e.target.value) || 1200;
+  function handleRateChange(value: SelectValue) {
+    const rate = Number(value) || 1200;
     setExchangeRate(rate);
     setFormData((prev) => ({ ...prev, amountIQD: prev.amountUSD * rate }));
   }
@@ -606,18 +714,28 @@ export default function AdminPanel() {
 
                 <label className="field-title">
                   <span>Title</span>
-                  <select name="title" value={formData.title} onChange={handleChange}>
-                    <option value="Mr">Mr</option>
-                    <option value="Miss">Miss</option>
-                  </select>
+                  <CustomSelect
+                    id="form-title"
+                    value={formData.title}
+                    options={TITLE_OPTIONS}
+                    onChange={(value) => handleFormSelect("title", value)}
+                    openSelectId={openSelectId}
+                    setOpenSelectId={setOpenSelectId}
+                    menuTitle="Customer title"
+                  />
                 </label>
 
                 <label className="field-lang">
                   <span>Lang</span>
-                  <select name="customerLang" value={formData.customerLang} onChange={handleChange}>
-                    <option value="ku">Kurdish</option>
-                    <option value="ar">Arabic</option>
-                  </select>
+                  <CustomSelect
+                    id="form-language"
+                    value={formData.customerLang}
+                    options={LANGUAGE_OPTIONS}
+                    onChange={(value) => handleFormSelect("customerLang", value)}
+                    openSelectId={openSelectId}
+                    setOpenSelectId={setOpenSelectId}
+                    menuTitle="Customer language"
+                  />
                 </label>
 
                 <label className="field-name">
@@ -643,10 +761,16 @@ export default function AdminPanel() {
                 <label className="field-usd">
                   <span className="label-with-select">
                     USD
-                    <select value={exchangeRate} onChange={handleRateChange}>
-                      <option value={1200}>1200</option>
-                      <option value={1190}>1190</option>
-                    </select>
+                    <CustomSelect
+                      id="exchange-rate"
+                      value={exchangeRate}
+                      options={RATE_OPTIONS}
+                      onChange={handleRateChange}
+                      openSelectId={openSelectId}
+                      setOpenSelectId={setOpenSelectId}
+                      className="mini-select-trigger"
+                      menuTitle="Exchange rate"
+                    />
                   </span>
                   <input type="number" name="amountUSD" value={formData.amountUSD === 0 ? "" : formData.amountUSD} placeholder="0" onChange={handleUSDChange} required />
                 </label>
@@ -658,17 +782,29 @@ export default function AdminPanel() {
 
                 <label className="field-ship">
                   <span>Delivery</span>
-                  <select name="shippingIQD" value={formData.shippingIQD} onChange={handleChange}>
-                    <option value={5000}>5000</option>
-                    <option value={0}>Free</option>
-                  </select>
+                  <CustomSelect
+                    id="form-delivery"
+                    value={formData.shippingIQD}
+                    options={DELIVERY_OPTIONS}
+                    onChange={(value) => handleFormSelect("shippingIQD", Number(value))}
+                    openSelectId={openSelectId}
+                    setOpenSelectId={setOpenSelectId}
+                    menuTitle="Delivery fee"
+                  />
                 </label>
 
                 <label className="field-status">
                   <span>Status</span>
-                  <select name="status" value={formData.status} onChange={handleChange}>
-                    <StatusOptions />
-                  </select>
+                  <CustomSelect
+                    id="form-status"
+                    value={formData.status}
+                    options={STATUS_SELECT_OPTIONS}
+                    onChange={(value) => handleFormSelect("status", Number(value))}
+                    openSelectId={openSelectId}
+                    setOpenSelectId={setOpenSelectId}
+                    className={`status-select ${getStatusOption(formData.status).tone}`}
+                    menuTitle="Order status"
+                  />
                 </label>
               </div>
 
@@ -696,10 +832,15 @@ export default function AdminPanel() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
-                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                  <option value="all">All Status</option>
-                  <StatusOptions />
-                </select>
+                <CustomSelect
+                  id="filter-status"
+                  value={filterStatus}
+                  options={FILTER_STATUS_OPTIONS}
+                  onChange={(value) => setFilterStatus(String(value))}
+                  openSelectId={openSelectId}
+                  setOpenSelectId={setOpenSelectId}
+                  menuTitle="Filter status"
+                />
               </div>
             </div>
 
@@ -712,11 +853,15 @@ export default function AdminPanel() {
                 />
                 <span>{selectedOrders.length} selected</span>
               </label>
-              <select value={bulkStatus} onChange={(e) => setBulkStatus(Number(e.target.value))}>
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status.value} value={status.value}>To: {status.shortLabel}</option>
-                ))}
-              </select>
+              <CustomSelect
+                id="bulk-status"
+                value={bulkStatus}
+                options={STATUS_SELECT_COMPACT_OPTIONS.map((status) => ({ ...status, label: `To: ${status.label}` }))}
+                onChange={(value) => setBulkStatus(Number(value))}
+                openSelectId={openSelectId}
+                setOpenSelectId={setOpenSelectId}
+                menuTitle="Bulk status"
+              />
               <button type="button" className="primary-soft-btn" onClick={handleBulkUpdate} disabled={selectedOrders.length === 0 || loading}>Update</button>
               <button type="button" className="danger-soft-btn" onClick={handleBulkDelete} disabled={selectedOrders.length === 0 || loading}>Delete</button>
             </div>
@@ -743,11 +888,16 @@ export default function AdminPanel() {
                           <small dir="ltr">{order._realPhone || "No phone"} · {formatUSD(order.amountUSD)} · {order.date || "-"}</small>
                         </button>
 
-                        <select className={`status-select mobile-status ${option.tone}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
-                          {STATUS_OPTIONS.map((item) => (
-                            <option key={item.value} value={item.value}>{item.shortLabel}</option>
-                          ))}
-                        </select>
+                        <CustomSelect
+                          id={`mobile-status-${order.id}`}
+                          value={status}
+                          options={STATUS_SELECT_COMPACT_OPTIONS}
+                          onChange={(value) => handleQuickStatusChange(order.id, String(value))}
+                          openSelectId={openSelectId}
+                          setOpenSelectId={setOpenSelectId}
+                          className={`status-select mobile-status ${option.tone}`}
+                          menuTitle={`${order.id} status`}
+                        />
 
                         <div className="mobile-row-actions">
                           <button type="button" className="wa-btn" onClick={() => sendWhatsApp(order)}>WA</button>
@@ -791,9 +941,16 @@ export default function AdminPanel() {
                               </div>
                             </td>
                             <td>
-                              <select className={`status-select ${option.tone}`} value={status} onChange={(e) => handleQuickStatusChange(order.id, e.target.value)}>
-                                <StatusOptions />
-                              </select>
+                              <CustomSelect
+                                id={`table-status-${order.id}`}
+                                value={status}
+                                options={STATUS_SELECT_OPTIONS}
+                                onChange={(value) => handleQuickStatusChange(order.id, String(value))}
+                                openSelectId={openSelectId}
+                                setOpenSelectId={setOpenSelectId}
+                                className={`status-select ${option.tone}`}
+                                menuTitle={`${order.id} status`}
+                              />
                             </td>
                             <td>
                               <strong>{formatUSD(order.amountUSD)}</strong>
@@ -826,18 +983,22 @@ function AdminStyles() {
   return (
     <style>{`
       :root {
-        --admin-bg: #06110e;
-        --admin-card: #0d1a16;
-        --admin-card-strong: #10241e;
-        --admin-soft: #0a1713;
-        --admin-text: #edfdf7;
-        --admin-muted: #8fa99f;
-        --admin-border: rgba(140, 255, 216, 0.15);
-        --admin-primary: #22c55e;
-        --admin-primary-dark: #16a34a;
-        --admin-danger: #fb7185;
-        --admin-warning: #fbbf24;
-        --admin-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+        --admin-bg: #030504;
+        --admin-card: #08100d;
+        --admin-card-strong: #0c1712;
+        --admin-soft: #050a08;
+        --admin-text: #fff3df;
+        --admin-muted: #b6a991;
+        --admin-border: rgba(0, 155, 105, 0.24);
+        --admin-primary: #009b69;
+        --admin-primary-dark: #007a53;
+        --admin-primary-glow: rgba(25, 212, 147, 0.18);
+        --admin-orange: #b85a16;
+        --admin-orange-dark: #8c3f0d;
+        --admin-on-orange: #100b07;
+        --admin-danger: #d9485f;
+        --admin-warning: #b85a16;
+        --admin-shadow: 0 22px 70px rgba(0, 0, 0, 0.58);
         --admin-radius: 18px;
       }
 
@@ -849,9 +1010,10 @@ function AdminStyles() {
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--admin-text);
         background:
-          radial-gradient(circle at 8% -8%, rgba(34, 197, 94, 0.18), transparent 34%),
-          radial-gradient(circle at 92% 0%, rgba(20, 184, 166, 0.14), transparent 32%),
-          linear-gradient(180deg, #071410 0%, var(--admin-bg) 52%, #030806 100%);
+          radial-gradient(circle at 8% -8%, rgba(0, 155, 105, 0.22), transparent 34%),
+          radial-gradient(circle at 92% 0%, rgba(184, 90, 22, 0.15), transparent 30%),
+          linear-gradient(180deg, #07100c 0%, var(--admin-bg) 52%, #010202 100%);
+        text-shadow: 0 0 9px rgba(255, 243, 223, 0.08);
       }
 
       .admin-page { padding: 18px; }
@@ -867,7 +1029,7 @@ function AdminStyles() {
       .panel-card,
       .stat-card,
       .login-card {
-        background: linear-gradient(180deg, rgba(16, 36, 30, 0.96), rgba(9, 21, 18, 0.96));
+        background: linear-gradient(180deg, rgba(12, 23, 18, 0.98), rgba(4, 9, 7, 0.98));
         border: 1px solid var(--admin-border);
         box-shadow: var(--admin-shadow);
       }
@@ -927,14 +1089,18 @@ function AdminStyles() {
       .secondary-link:active { transform: scale(0.98); }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-      .primary-btn { background: var(--admin-primary); color: white; }
-      .primary-btn:hover { background: var(--admin-primary-dark); }
-      .ghost-btn, .secondary-link { background: rgba(148, 163, 184, 0.12); color: #d7fff1; border: 1px solid rgba(148, 163, 184, 0.15); }
-      .primary-soft-btn { background: rgba(34, 197, 94, 0.16); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.22); }
-      .danger-soft-btn { background: rgba(244, 63, 94, 0.14); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.22); }
-      .wa-btn { background: rgba(34, 197, 94, 0.16); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.22); }
-      .edit-btn { background: rgba(59, 130, 246, 0.16); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.22); }
-      .delete-btn { background: rgba(244, 63, 94, 0.14); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.22); }
+      .primary-btn {
+        background: linear-gradient(135deg, var(--admin-orange), #d06a18);
+        color: var(--admin-on-orange);
+        box-shadow: 0 0 18px rgba(184, 90, 22, 0.20);
+      }
+      .primary-btn:hover { background: linear-gradient(135deg, #ca681d, var(--admin-orange)); }
+      .ghost-btn, .secondary-link { background: rgba(255, 243, 223, 0.06); color: var(--admin-text); border: 1px solid rgba(0, 155, 105, 0.22); }
+      .primary-soft-btn { background: rgba(0, 155, 105, 0.17); color: #bfffe8; border: 1px solid rgba(0, 155, 105, 0.32); }
+      .danger-soft-btn { background: rgba(217, 72, 95, 0.13); color: #ffd1d8; border: 1px solid rgba(217, 72, 95, 0.26); }
+      .wa-btn { background: rgba(0, 155, 105, 0.17); color: #bfffe8; border: 1px solid rgba(0, 155, 105, 0.32); }
+      .edit-btn { background: rgba(184, 90, 22, 0.16); color: #ffd2a8; border: 1px solid rgba(184, 90, 22, 0.32); }
+      .delete-btn { background: rgba(217, 72, 95, 0.13); color: #ffd1d8; border: 1px solid rgba(217, 72, 95, 0.26); }
 
       .notice {
         border-radius: 14px;
@@ -943,9 +1109,9 @@ function AdminStyles() {
         font-weight: 850;
         border: 1px solid transparent;
       }
-      .notice.success { color: #a7f3d0; background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.26); }
-      .notice.error { color: #fecdd3; background: rgba(244, 63, 94, 0.12); border-color: rgba(244, 63, 94, 0.28); }
-      .notice.info { color: #bfdbfe; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.26); }
+      .notice.success { color: #c7ffe9; background: rgba(0, 155, 105, 0.12); border-color: rgba(0, 155, 105, 0.28); }
+      .notice.error { color: #ffd1d8; background: rgba(217, 72, 95, 0.12); border-color: rgba(217, 72, 95, 0.28); }
+      .notice.info { color: #ffe1bd; background: rgba(184, 90, 22, 0.12); border-color: rgba(184, 90, 22, 0.28); }
 
       .stats-grid {
         display: grid;
@@ -978,9 +1144,9 @@ function AdminStyles() {
       .panel-title-row small { color: var(--admin-muted); font-size: 0.9rem; }
 
       .edit-chip {
-        background: rgba(34, 197, 94, 0.14);
-        color: #bbf7d0;
-        border: 1px solid rgba(34, 197, 94, 0.28);
+        background: rgba(0, 155, 105, 0.16);
+        color: #c7ffe9;
+        border: 1px solid rgba(0, 155, 105, 0.32);
         border-radius: 999px;
         padding: 8px 11px;
         font-size: 12px;
@@ -1020,43 +1186,135 @@ function AdminStyles() {
       .field-status { grid-column: span 4; }
 
       input,
-      select {
+      .custom-select-trigger {
         width: 100%;
         min-width: 0;
         border: 1px solid var(--admin-border);
-        background: #08130f;
+        background: linear-gradient(180deg, #08100d, #050a08);
         color: var(--admin-text);
         border-radius: 12px;
         min-height: 42px;
         padding: 10px 11px;
         outline: none;
         font-size: 14px;
-        font-weight: 800;
+        font-weight: 850;
+        box-shadow: inset 0 1px 0 rgba(255, 243, 223, 0.04), 0 0 0 rgba(0, 155, 105, 0);
       }
 
-      select {
-        appearance: none;
-        -webkit-appearance: none;
-        padding-right: 34px;
-        background-color: #08130f;
-        background-image: linear-gradient(45deg, transparent 50%, #7dd3fc 50%), linear-gradient(135deg, #7dd3fc 50%, transparent 50%), linear-gradient(180deg, rgba(34, 197, 94, 0.10), rgba(20, 184, 166, 0.04));
-        background-position: calc(100% - 18px) calc(50% + 1px), calc(100% - 13px) calc(50% + 1px), 0 0;
-        background-size: 5px 5px, 5px 5px, 100% 100%;
-        background-repeat: no-repeat;
+      .custom-select { position: relative; width: 100%; min-width: 0; }
+      .custom-select-trigger {
         cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        text-align: left;
       }
+      .custom-select-trigger span:first-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .select-arrow {
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        border-radius: 8px;
+        background: rgba(0, 155, 105, 0.16);
+        color: #bfffe8;
+        display: grid;
+        place-items: center;
+        line-height: 1;
+        box-shadow: 0 0 12px rgba(0, 155, 105, 0.12);
+      }
+      .custom-select.is-open .select-arrow { transform: rotate(180deg); }
 
-      select option {
-        background: #0b1713;
-        color: #edfdf7;
+      .select-popover-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(1, 2, 2, 0.46);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
       }
+      .select-popover {
+        width: min(380px, calc(100vw - 28px));
+        max-height: min(650px, calc(100vh - 36px));
+        overflow: hidden;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #0b1611, #030605);
+        border: 1px solid rgba(0, 155, 105, 0.36);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.70), 0 0 30px rgba(0, 155, 105, 0.13);
+      }
+      .select-popover-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 14px 14px 10px;
+        border-bottom: 1px solid rgba(0, 155, 105, 0.18);
+      }
+      .select-popover-head strong {
+        color: var(--admin-text);
+        font-size: 13px;
+        font-weight: 950;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .select-popover-head button {
+        min-height: 32px;
+        width: 32px;
+        padding: 0;
+        border-radius: 10px;
+        background: rgba(184, 90, 22, 0.18);
+        color: #ffd2a8;
+        border: 1px solid rgba(184, 90, 22, 0.30);
+        font-size: 20px;
+        line-height: 1;
+      }
+      .select-option-list {
+        display: grid;
+        gap: 7px;
+        padding: 10px;
+        max-height: min(540px, calc(100vh - 118px));
+        overflow: auto;
+      }
+      .select-option {
+        width: 100%;
+        min-height: 42px;
+        justify-content: space-between;
+        border-radius: 13px;
+        padding: 10px 12px;
+        background: rgba(255, 243, 223, 0.055);
+        color: var(--admin-text);
+        border: 1px solid rgba(0, 155, 105, 0.16);
+        text-align: left;
+        box-shadow: none;
+      }
+      .select-option:hover {
+        background: linear-gradient(135deg, var(--admin-orange), #d06a18);
+        color: var(--admin-on-orange);
+        border-color: rgba(255, 175, 95, 0.5);
+        text-shadow: none;
+      }
+      .select-option.active {
+        background: linear-gradient(135deg, rgba(0, 155, 105, 0.32), rgba(0, 122, 83, 0.38));
+        border-color: rgba(0, 155, 105, 0.55);
+        box-shadow: 0 0 18px rgba(0, 155, 105, 0.14);
+      }
+      .select-option b { color: #bfffe8; font-size: 15px; }
 
       input::placeholder { color: rgba(237, 253, 247, 0.42); }
 
       input:focus,
-      select:focus {
-        border-color: rgba(52, 211, 153, 0.66);
-        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.13);
+      .custom-select-trigger:focus {
+        border-color: rgba(0, 155, 105, 0.70);
+        box-shadow: 0 0 0 4px rgba(0, 155, 105, 0.13), 0 0 16px rgba(0, 155, 105, 0.10);
       }
 
       .label-with-select {
@@ -1065,12 +1323,19 @@ function AdminStyles() {
         justify-content: space-between;
         gap: 6px;
       }
-      .label-with-select select {
-        width: 70px;
+      .label-with-select .custom-select { width: 78px; }
+      .label-with-select .custom-select-trigger,
+      .label-with-select .mini-select-trigger {
         min-height: 26px;
         padding: 3px 6px;
         border-radius: 8px;
         font-size: 11px;
+      }
+      .label-with-select .select-arrow {
+        width: 17px;
+        height: 17px;
+        border-radius: 6px;
+        font-size: 10px;
       }
 
       .form-actions {
@@ -1098,7 +1363,7 @@ function AdminStyles() {
         background: var(--admin-soft);
         border: 1px solid var(--admin-border);
       }
-      .bulk-bar.active { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.30); }
+      .bulk-bar.active { background: rgba(0, 155, 105, 0.13); border-color: rgba(0, 155, 105, 0.34); }
       .select-all-inline {
         display: flex;
         align-items: center;
@@ -1132,7 +1397,7 @@ function AdminStyles() {
         overflow: auto;
         border: 1px solid var(--admin-border);
         border-radius: 16px;
-        background: #08130f;
+        background: #050a08;
       }
       .orders-table {
         width: 100%;
@@ -1143,7 +1408,7 @@ function AdminStyles() {
         position: sticky;
         top: 0;
         z-index: 2;
-        background: #0f211c;
+        background: #0b1611;
         color: #9fb9b0;
         font-size: 11px;
         font-weight: 950;
@@ -1158,13 +1423,13 @@ function AdminStyles() {
       .orders-table th:last-child { cursor: default; text-align: right; }
       .orders-table td {
         padding: 10px 12px;
-        border-top: 1px solid rgba(140, 255, 216, 0.10);
+        border-top: 1px solid rgba(0, 155, 105, 0.13);
         vertical-align: middle;
         font-size: 13px;
         font-weight: 800;
       }
-      .orders-table tr:hover { background: rgba(34, 197, 94, 0.06); }
-      .orders-table tr.selected-row { background: rgba(34, 197, 94, 0.12); }
+      .orders-table tr:hover { background: rgba(0, 155, 105, 0.07); }
+      .orders-table tr.selected-row { background: rgba(0, 155, 105, 0.13); }
       .order-code { color: var(--admin-primary); font-size: 15px; letter-spacing: 0.02em; }
       .customer-cell { display: grid; gap: 2px; }
       .customer-cell span,
@@ -1176,28 +1441,28 @@ function AdminStyles() {
         font-size: 12px;
         border-width: 1px;
       }
-      .status-select.neutral { background-color: rgba(148, 163, 184, 0.14); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.24); }
-      .status-select.amber { background-color: rgba(245, 158, 11, 0.16); color: #fcd34d; border-color: rgba(245, 158, 11, 0.34); }
-      .status-select.purple { background-color: rgba(168, 85, 247, 0.16); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.34); }
-      .status-select.cyan { background-color: rgba(6, 182, 212, 0.16); color: #67e8f9; border-color: rgba(6, 182, 212, 0.34); }
-      .status-select.orange { background-color: rgba(249, 115, 22, 0.16); color: #fdba74; border-color: rgba(249, 115, 22, 0.34); }
-      .status-select.indigo { background-color: rgba(99, 102, 241, 0.17); color: #c7d2fe; border-color: rgba(99, 102, 241, 0.34); }
-      .status-select.green { background-color: rgba(34, 197, 94, 0.16); color: #86efac; border-color: rgba(34, 197, 94, 0.34); }
-      .status-select.emerald { background-color: rgba(16, 185, 129, 0.18); color: #a7f3d0; border-color: rgba(16, 185, 129, 0.36); }
+      .status-select.neutral { background: rgba(255, 243, 223, 0.055); color: #fff3df; border-color: rgba(255, 243, 223, 0.15); }
+      .status-select.amber { background: rgba(184, 90, 22, 0.16); color: #ffd2a8; border-color: rgba(184, 90, 22, 0.32); }
+      .status-select.purple { background: rgba(104, 73, 132, 0.18); color: #e8d4ff; border-color: rgba(162, 123, 202, 0.28); }
+      .status-select.cyan { background: rgba(0, 116, 107, 0.17); color: #c7fff2; border-color: rgba(0, 155, 135, 0.30); }
+      .status-select.orange { background: rgba(184, 90, 22, 0.20); color: #ffd2a8; border-color: rgba(184, 90, 22, 0.38); }
+      .status-select.indigo { background: rgba(64, 73, 115, 0.18); color: #d9e2ff; border-color: rgba(112, 128, 190, 0.28); }
+      .status-select.green { background: rgba(0, 155, 105, 0.17); color: #bfffe8; border-color: rgba(0, 155, 105, 0.34); }
+      .status-select.emerald { background: rgba(0, 155, 105, 0.22); color: #d1ffef; border-color: rgba(0, 155, 105, 0.42); }
 
-      .filter-row select,
-      .bulk-bar select,
-      .field-status select,
+      .filter-row .custom-select-trigger,
+      .bulk-bar .custom-select-trigger,
+      .field-status .custom-select-trigger,
       .status-select,
       .mobile-status {
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 20px rgba(0, 0, 0, 0.12);
+        box-shadow: inset 0 1px 0 rgba(255, 243, 223, 0.04), 0 8px 20px rgba(0, 0, 0, 0.16);
       }
 
       .status-select:hover,
-      .filter-row select:hover,
-      .bulk-bar select:hover,
-      .field-status select:hover {
-        border-color: rgba(125, 211, 252, 0.44);
+      .filter-row .custom-select-trigger:hover,
+      .bulk-bar .custom-select-trigger:hover,
+      .field-status .custom-select-trigger:hover {
+        border-color: rgba(0, 155, 105, 0.54);
       }
 
       .row-actions {
@@ -1284,7 +1549,7 @@ function AdminStyles() {
         .field-status { grid-column: span 2; }
 
         input,
-        select {
+        .custom-select-trigger {
           min-height: 36px;
           border-radius: 9px;
           padding: 7px 7px;
@@ -1292,14 +1557,17 @@ function AdminStyles() {
           font-weight: 850;
         }
         .label-with-select { gap: 3px; }
-        .label-with-select select { width: 52px; min-height: 20px; font-size: 9px; padding: 1px 3px; border-radius: 6px; }
+        .label-with-select .custom-select { width: 58px; }
+        .label-with-select .custom-select-trigger,
+        .label-with-select .mini-select-trigger { min-height: 20px; font-size: 9px; padding: 1px 3px; border-radius: 6px; }
+        .label-with-select .select-arrow { width: 14px; height: 14px; font-size: 8px; border-radius: 5px; }
         .form-actions { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 6px; }
         .form-actions button { width: 100%; min-width: 0; min-height: 37px; padding: 8px 6px; font-size: 12px; border-radius: 10px; }
 
         .orders-title-row { gap: 7px; }
         .filter-row { grid-template-columns: 1fr 1fr; gap: 6px; }
         .filter-row input,
-        .filter-row select { min-height: 36px; }
+        .filter-row .custom-select-trigger { min-height: 36px; }
 
         .bulk-bar {
           grid-template-columns: minmax(94px, 0.8fr) minmax(118px, 1.1fr) 62px 58px;
@@ -1308,7 +1576,7 @@ function AdminStyles() {
           margin-bottom: 6px;
           border-radius: 11px;
         }
-        .bulk-bar select { min-height: 34px; font-size: 11px; }
+        .bulk-bar .custom-select-trigger { min-height: 34px; font-size: 11px; }
         .bulk-bar button { min-height: 34px; padding: 7px 3px; font-size: 10px; border-radius: 9px; }
         .select-all-inline { gap: 5px; font-size: 11px; }
         .select-all-inline input { width: 16px; height: 16px; min-height: 16px; }
@@ -1319,7 +1587,7 @@ function AdminStyles() {
           border: 1px solid var(--admin-border);
           border-radius: 12px;
           overflow: hidden;
-          background: #08130f;
+          background: #050a08;
         }
         .mobile-order-row {
           display: grid;
@@ -1330,11 +1598,11 @@ function AdminStyles() {
           align-items: center;
           gap: 5px 7px;
           padding: 7px;
-          border-bottom: 1px solid rgba(140, 255, 216, 0.10);
-          background: #08130f;
+          border-bottom: 1px solid rgba(0, 155, 105, 0.13);
+          background: #050a08;
         }
         .mobile-order-row:last-child { border-bottom: 0; }
-        .mobile-order-row.selected { background: rgba(34, 197, 94, 0.12); }
+        .mobile-order-row.selected { background: rgba(0, 155, 105, 0.13); }
         .mobile-select-box { grid-area: check; display: grid; place-items: center; }
         .mobile-select-box input { width: 17px; height: 17px; min-height: 17px; }
         .mobile-main-info {
@@ -1396,7 +1664,7 @@ function AdminStyles() {
         .admin-page { padding-left: 5px; padding-right: 5px; }
         .panel-card { padding: 7px; }
         .form-strip { gap: 5px; }
-        input, select { font-size: 11.5px; padding-left: 6px; padding-right: 6px; }
+        input, .custom-select-trigger { font-size: 11.5px; padding-left: 6px; padding-right: 6px; }
         .bulk-bar { grid-template-columns: 1fr 1fr; }
         .bulk-bar .primary-soft-btn,
         .bulk-bar .danger-soft-btn { min-height: 32px; }
